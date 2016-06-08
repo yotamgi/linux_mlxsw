@@ -125,6 +125,7 @@ enum devlink_attr {
 	DEVLINK_ATTR_SB_TC_INDEX,		/* u16 */
 	DEVLINK_ATTR_SB_OCC_CUR,		/* u32 */
 	DEVLINK_ATTR_SB_OCC_MAX,		/* u32 */
+	DEVLINK_ATTR_OWNER_MODNAME,		/* string */
 
 	/* add new attributes above here, update the policy in devlink.c */
 

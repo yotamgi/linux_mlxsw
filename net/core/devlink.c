@@ -377,6 +377,10 @@ static int devlink_nl_fill(struct sk_buff *msg, struct devlink *devlink,
 	if (devlink_nl_put_handle(msg, devlink))
 		goto nla_put_failure;
 
+	if (nla_put_string(msg, DEVLINK_ATTR_OWNER_MODNAME,
+			   devlink->dev->driver->owner->name))
+		goto nla_put_failure;
+
 	genlmsg_end(msg, hdr);
 	return 0;
 
