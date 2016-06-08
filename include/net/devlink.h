@@ -112,6 +112,8 @@ struct devlink *devlink_alloc(const struct devlink_ops *ops, size_t priv_size);
 int devlink_register(struct devlink *devlink, struct device *dev);
 void devlink_unregister(struct devlink *devlink);
 void devlink_free(struct devlink *devlink);
+void devlink_trace_hwmsg(const struct devlink *devlink, bool incoming,
+			 unsigned long type, const u8 *buf, size_t len);
 int devlink_port_register(struct devlink *devlink,
 			  struct devlink_port *devlink_port,
 			  unsigned int port_index);
@@ -149,6 +151,12 @@ static inline void devlink_unregister(struct devlink *devlink)
 static inline void devlink_free(struct devlink *devlink)
 {
 	kfree(devlink);
+}
+
+static inline void devlink_trace_hwmsg(const struct devlink *devlink,
+				       bool incoming, unsigned long type,
+				       const u8 *buf, size_t len);
+{
 }
 
 static inline int devlink_port_register(struct devlink *devlink,

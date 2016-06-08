@@ -26,6 +26,8 @@
 #include <net/net_namespace.h>
 #include <net/sock.h>
 #include <net/devlink.h>
+#define CREATE_TRACE_POINTS
+#include <trace/events/devlink.h>
 
 static LIST_HEAD(devlink_list);
 
@@ -1595,6 +1597,13 @@ void devlink_free(struct devlink *devlink)
 	kfree(devlink);
 }
 EXPORT_SYMBOL_GPL(devlink_free);
+
+void devlink_trace_hwmsg(const struct devlink *devlink, bool incoming,
+			 unsigned long type, const u8 *buf, size_t len)
+{
+	trace_devlink_hwmsg(devlink, incoming, type, buf, len);
+}
+EXPORT_SYMBOL_GPL(devlink_trace_hwmsg);
 
 /**
  *	devlink_port_register - Register devlink port
