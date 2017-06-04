@@ -683,12 +683,34 @@ static inline size_t fdb_nlmsg_size(void)
 		+ nla_total_size(sizeof(struct nda_cacheinfo));
 }
 
+static void
+fdb_notify_switchdev(const struct net_bridge_fdb_entry *fdb, int type)
+{
+	if (!fdb->added_by_user)
+		return;
+
+	switch (type) {
+	case RTM_DELNEIGH:
+		br_switchdev_fdb_call_notifiers(false, fdb->addr.addr,
+						fdb->vlan_id,
+						fdb->dst->dev);
+		break;
+	case RTM_NEWNEIGH:
+		br_switchdev_fdb_call_notifiers(true, fdb->addr.addr,
+						fdb->vlan_id,
+						fdb->dst->dev);
+		break;
+	}
+}
+
 static void fdb_notify(struct net_bridge *br,
 		       const struct net_bridge_fdb_entry *fdb, int type)
 {
 	struct net *net = dev_net(br->dev);
 	struct sk_buff *skb;
 	int err = -ENOBUFS;
+
+	fdb_notify_switchdev(fdb, type);
 
 	skb = nlmsg_new(fdb_nlmsg_size(), GFP_ATOMIC);
 	if (skb == NULL)

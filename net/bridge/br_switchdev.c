@@ -55,3 +55,16 @@ bool nbp_switchdev_allowed_egress(const struct net_bridge_port *p,
 	return !skb->offload_fwd_mark ||
 	       BR_INPUT_SKB_CB(skb)->offload_fwd_mark != p->offload_fwd_mark;
 }
+
+void
+br_switchdev_fdb_call_notifiers(bool adding, const unsigned char *mac,
+				u16 vid, struct net_device *dev)
+{
+	struct switchdev_notifier_fdb_info info;
+	unsigned long notifier_type;
+
+	info.addr = mac;
+	info.vid = vid;
+	notifier_type = adding ? SWITCHDEV_FDB_ADD_TO_DEVICE : SWITCHDEV_FDB_DEL_TO_DEVICE;
+	call_switchdev_notifiers(notifier_type, dev, &info.info);
+}
