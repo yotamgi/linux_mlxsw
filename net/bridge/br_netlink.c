@@ -17,6 +17,7 @@
 #include <net/net_namespace.h>
 #include <net/sock.h>
 #include <uapi/linux/if_bridge.h>
+#include <net/switchdev.h>
 
 #include "br_private.h"
 #include "br_private_stp.h"
@@ -662,16 +663,52 @@ static int br_set_port_state(struct net_bridge_port *p, u8 state)
 }
 
 /* Set/clear or port flags based on attribute */
-static void br_set_port_flag(struct net_bridge_port *p, struct nlattr *tb[],
-			   int attrtype, unsigned long mask)
+static int br_set_port_flag(struct net_bridge_port *p, struct nlattr *tb[],
+			    int attrtype, unsigned long mask)
 {
-	if (tb[attrtype]) {
-		u8 flag = nla_get_u8(tb[attrtype]);
-		if (flag)
-			p->flags |= mask;
-		else
-			p->flags &= ~mask;
+	struct switchdev_attr attr = {
+		.orig_dev = p->dev,
+		.id = SWITCHDEV_ATTR_ID_PORT_BRIDGE_FLAGS_SUPPORT,
+	};
+	unsigned long flags;
+	int err;
+
+	if (!tb[attrtype])
+		return 0;
+
+	if (nla_get_u8(tb[attrtype]))
+		flags = p->flags | mask;
+	else
+		flags = p->flags & ~mask;
+
+	if (mask & ~BR_PORT_FLAGS_HW_OFFLOAD)
+		goto out;
+
+	err = switchdev_port_attr_get(p->dev, &attr);
+	if (err == -EOPNOTSUPP)
+		goto out;
+	if (err)
+		return err;
+
+	/* Check if specific bridge flag attribute offload is supported */
+	if (!(attr.u.brport_flags_support & mask)) {
+		br_warn(p->br, "bridge flag offload is not supported %u(%s)\n",
+			(unsigned int)p->port_no, p->dev->name);
+		return -EOPNOTSUPP;
 	}
+
+	attr.id = SWITCHDEV_ATTR_ID_PORT_BRIDGE_FLAGS;
+	attr.flags = SWITCHDEV_F_DEFER;
+	attr.u.brport_flags = flags;
+	err = switchdev_port_attr_set(p->dev, &attr);
+	if (err) {
+		br_warn(p->br, "error setting offload FLAG on port %u(%s)\n",
+			(unsigned int)p->port_no, p->dev->name);
+		return err;
+	}
+out:
+	p->flags = flags;
+	return 0;
 }
 
 /* Process bridge protocol info on port */
@@ -681,20 +718,55 @@ static int br_setport(struct net_bridge_port *p, struct nlattr *tb[])
 	bool br_vlan_tunnel_old = false;
 	int err;
 
-	br_set_port_flag(p, tb, IFLA_BRPORT_MODE, BR_HAIRPIN_MODE);
-	br_set_port_flag(p, tb, IFLA_BRPORT_GUARD, BR_BPDU_GUARD);
-	br_set_port_flag(p, tb, IFLA_BRPORT_FAST_LEAVE, BR_MULTICAST_FAST_LEAVE);
-	br_set_port_flag(p, tb, IFLA_BRPORT_PROTECT, BR_ROOT_BLOCK);
-	br_set_port_flag(p, tb, IFLA_BRPORT_LEARNING, BR_LEARNING);
-	br_set_port_flag(p, tb, IFLA_BRPORT_UNICAST_FLOOD, BR_FLOOD);
-	br_set_port_flag(p, tb, IFLA_BRPORT_MCAST_FLOOD, BR_MCAST_FLOOD);
-	br_set_port_flag(p, tb, IFLA_BRPORT_MCAST_TO_UCAST, BR_MULTICAST_TO_UNICAST);
-	br_set_port_flag(p, tb, IFLA_BRPORT_BCAST_FLOOD, BR_BCAST_FLOOD);
-	br_set_port_flag(p, tb, IFLA_BRPORT_PROXYARP, BR_PROXYARP);
-	br_set_port_flag(p, tb, IFLA_BRPORT_PROXYARP_WIFI, BR_PROXYARP_WIFI);
+	err = br_set_port_flag(p, tb, IFLA_BRPORT_MODE, BR_HAIRPIN_MODE);
+	if (err)
+		return err;
+
+	err = br_set_port_flag(p, tb, IFLA_BRPORT_GUARD, BR_BPDU_GUARD);
+	if (err)
+		return err;
+
+	err = br_set_port_flag(p, tb, IFLA_BRPORT_FAST_LEAVE, BR_MULTICAST_FAST_LEAVE);
+	if (err)
+		return err;
+
+	err = br_set_port_flag(p, tb, IFLA_BRPORT_PROTECT, BR_ROOT_BLOCK);
+	if (err)
+		return err;
+
+	err = br_set_port_flag(p, tb, IFLA_BRPORT_LEARNING, BR_LEARNING);
+	if (err)
+		return err;
+
+	err = br_set_port_flag(p, tb, IFLA_BRPORT_UNICAST_FLOOD, BR_FLOOD);
+	if (err)
+		return err;
+
+	err = br_set_port_flag(p, tb, IFLA_BRPORT_MCAST_FLOOD, BR_MCAST_FLOOD);
+	if (err)
+		return err;
+
+	err = br_set_port_flag(p, tb, IFLA_BRPORT_MCAST_TO_UCAST, BR_MULTICAST_TO_UNICAST);
+	if (err)
+		return err;
+
+	err = br_set_port_flag(p, tb, IFLA_BRPORT_BCAST_FLOOD, BR_BCAST_FLOOD);
+	if (err)
+		return err;
+
+	err = br_set_port_flag(p, tb, IFLA_BRPORT_PROXYARP, BR_PROXYARP);
+	if (err)
+		return err;
+
+	err = br_set_port_flag(p, tb, IFLA_BRPORT_PROXYARP_WIFI, BR_PROXYARP_WIFI);
+	if (err)
+		return err;
 
 	br_vlan_tunnel_old = (p->flags & BR_VLAN_TUNNEL) ? true : false;
-	br_set_port_flag(p, tb, IFLA_BRPORT_VLAN_TUNNEL, BR_VLAN_TUNNEL);
+	err = br_set_port_flag(p, tb, IFLA_BRPORT_VLAN_TUNNEL, BR_VLAN_TUNNEL);
+	if (err)
+		return err;
+
 	if (br_vlan_tunnel_old && !(p->flags & BR_VLAN_TUNNEL))
 		nbp_vlan_tunnel_info_flush(p);
 
