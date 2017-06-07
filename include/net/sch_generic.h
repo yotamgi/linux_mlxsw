@@ -266,6 +266,8 @@ struct tcf_chain {
 
 struct tcf_block {
 	struct list_head chain_list;
+	u32 index; /* block index for shared blocks */
+	unsigned int refcnt;
 };
 
 static inline void qdisc_cb_private_validate(const struct sk_buff *skb, int sz)

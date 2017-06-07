@@ -25,6 +25,7 @@
 #include <linux/kmod.h>
 #include <linux/err.h>
 #include <linux/slab.h>
+#include <linux/idr.h>
 #include <net/net_namespace.h>
 #include <net/sock.h>
 #include <net/netlink.h>
@@ -286,51 +287,174 @@ tcf_chain_filter_chain_ptr_del(struct tcf_chain *chain,
 	WARN_ON(1);
 }
 
-static struct tcf_chain *tcf_block_chain_zero(struct tcf_block *block)
+struct tcf_net {
+	struct idr idr;
+};
+
+static unsigned int tcf_net_id;
+
+static int tcf_block_insert(struct tcf_block *block, struct net *net,
+			    u32 block_index)
 {
-	return list_first_entry(&block->chain_list, struct tcf_chain, list);
+	struct tcf_net *tn = net_generic(net, tcf_net_id);
+	int idr_start;
+	int idr_end;
+	int index;
+
+	if (block_index >= INT_MAX)
+		return -EINVAL;
+	idr_start = block_index ? block_index : 1;
+	idr_end = block_index ? block_index + 1 : INT_MAX;
+
+	index = idr_alloc(&tn->idr, block, idr_start, idr_end, GFP_KERNEL);
+	if (index < 0)
+		return index;
+	block->index = index;
+	return 0;
 }
 
-int tcf_block_get(struct tcf_block **p_block,
-		  struct tcf_proto __rcu **p_filter_chain)
+static void tcf_block_remove(struct tcf_block *block, struct net *net)
 {
-	struct tcf_block *block = kzalloc(sizeof(*block), GFP_KERNEL);
+	struct tcf_net *tn = net_generic(net, tcf_net_id);
+
+	idr_remove(&tn->idr, block->index);
+}
+
+static struct tcf_block *tcf_block_create(void)
+{
+	struct tcf_block *block;
 	struct tcf_chain *chain;
 	int err;
 
+	block = kzalloc(sizeof(*block), GFP_KERNEL);
 	if (!block)
-		return -ENOMEM;
+		return ERR_PTR(-ENOMEM);
 	INIT_LIST_HEAD(&block->chain_list);
+	block->refcnt = 1;
+
 	/* Create chain 0 by default, it has to be always present. */
 	chain = tcf_chain_create(block, 0);
 	if (!chain) {
 		err = -ENOMEM;
 		goto err_chain_create;
 	}
-	tcf_chain_filter_chain_ptr_add(chain, p_filter_chain);
-	*p_block = block;
-	return 0;
+	return block;
 
 err_chain_create:
 	kfree(block);
-	return err;
+	return ERR_PTR(err);
 }
-EXPORT_SYMBOL(tcf_block_get);
 
-void tcf_block_put(struct tcf_block *block)
+static void tcf_block_destroy(struct tcf_block *block)
 {
 	struct tcf_chain *chain, *tmp;
-
-	if (!block)
-		return;
-
-	tcf_chain_filter_chain_ptr_del(tcf_block_chain_zero(block), NULL);
 
 	list_for_each_entry_safe(chain, tmp, &block->chain_list, list)
 		tcf_chain_destroy(chain);
 	kfree(block);
 }
+
+static struct tcf_block *tcf_block_lookup(struct net *net, u32 block_index)
+{
+	struct tcf_net *tn = net_generic(net, tcf_net_id);
+
+	return idr_find(&tn->idr, block_index);
+}
+
+static struct tcf_chain *tcf_block_chain_zero(struct tcf_block *block)
+{
+	return list_first_entry(&block->chain_list, struct tcf_chain, list);
+}
+
+static int __tcf_block_get(struct tcf_block **p_block, bool shared,
+			   struct net *net, u32 block_index,
+			   struct tcf_proto __rcu **p_filter_chain)
+{
+	struct tcf_block *block = NULL;
+	bool created = false;
+	int err;
+
+	if (shared) {
+		block = tcf_block_lookup(net, block_index);
+		if (block)
+			block->refcnt++;
+	}
+
+	if (!block) {
+		block = tcf_block_create();
+		if (IS_ERR(block))
+			return PTR_ERR(block);
+		created = true;
+		if (shared) {
+			err = tcf_block_insert(block, net, block_index);
+			if (err)
+				goto err_block_insert;
+		}
+	}
+
+	err = tcf_chain_filter_chain_ptr_add(tcf_block_chain_zero(block),
+					     p_filter_chain);
+	if (err)
+		goto err_chain_filter_chain_ptr_add;
+
+	*p_block = block;
+	return 0;
+
+err_chain_filter_chain_ptr_add:
+	if (created) {
+		if (shared)
+			tcf_block_remove(block, net);
+err_block_insert:
+		tcf_block_destroy(block);
+	} else {
+		block->refcnt--;
+	}
+	return err;
+}
+
+int tcf_block_get(struct tcf_block **p_block,
+		  struct tcf_proto __rcu **p_filter_chain)
+{
+	return __tcf_block_get(p_block, false, NULL, 0, p_filter_chain);
+}
+EXPORT_SYMBOL(tcf_block_get);
+
+int tcf_block_get_shared(struct tcf_block **p_block,
+			 struct net *net, u32 block_index,
+			 struct tcf_proto __rcu **p_filter_chain)
+{
+	return __tcf_block_get(p_block, true, net, block_index, p_filter_chain);
+}
+EXPORT_SYMBOL(tcf_block_get_shared);
+
+static void __tcf_block_put(struct tcf_block *block,
+			    bool shared, struct net *net,
+			    struct tcf_proto __rcu **p_filter_chain)
+{
+	if (!block)
+		return;
+
+	tcf_chain_filter_chain_ptr_del(tcf_block_chain_zero(block), NULL);
+
+	if (--block->refcnt == 0) {
+		if (shared)
+			tcf_block_remove(block, net);
+		tcf_block_destroy(block);
+	}
+}
+
+void tcf_block_put(struct tcf_block *block)
+{
+	__tcf_block_put(block, false, NULL, NULL);
+}
 EXPORT_SYMBOL(tcf_block_put);
+
+void tcf_block_put_shared(struct tcf_block *block, struct net *net,
+			  struct tcf_proto __rcu **p_filter_chain)
+{
+	__tcf_block_put(block, true, net, p_filter_chain);
+}
+EXPORT_SYMBOL(tcf_block_put_shared);
 
 /* Main classifier routine: scans classifier chain attached
  * to this qdisc, (optionally) tests for protocol and asks
@@ -1031,8 +1155,36 @@ int tcf_exts_get_dev(struct net_device *dev, struct tcf_exts *exts,
 }
 EXPORT_SYMBOL(tcf_exts_get_dev);
 
+static __net_init int tcf_net_init(struct net *net)
+{
+	struct tcf_net *tn = net_generic(net, tcf_net_id);
+
+	idr_init(&tn->idr);
+	return 0;
+}
+
+static void __net_exit tcf_net_exit(struct net *net)
+{
+	struct tcf_net *tn = net_generic(net, tcf_net_id);
+
+	idr_destroy(&tn->idr);
+}
+
+static struct pernet_operations tcf_net_ops = {
+	.init = tcf_net_init,
+	.exit = tcf_net_exit,
+	.id   = &tcf_net_id,
+	.size = sizeof(struct tcf_net),
+};
+
 static int __init tc_filter_init(void)
 {
+	int err;
+
+	err = register_pernet_subsys(&tcf_net_ops);
+	if (err)
+		return err;
+
 	rtnl_register(PF_UNSPEC, RTM_NEWTFILTER, tc_ctl_tfilter, NULL, NULL);
 	rtnl_register(PF_UNSPEC, RTM_DELTFILTER, tc_ctl_tfilter, NULL, NULL);
 	rtnl_register(PF_UNSPEC, RTM_GETTFILTER, tc_ctl_tfilter,
