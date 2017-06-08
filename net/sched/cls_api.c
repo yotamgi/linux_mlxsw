@@ -186,6 +186,11 @@ static void tcf_proto_destroy(struct tcf_proto *tp)
 	kfree_rcu(tp, rcu);
 }
 
+struct tfc_filter_chain_list_item {
+	struct list_head list;
+	struct tcf_proto __rcu **p_filter_chain;
+};
+
 static struct tcf_chain *tcf_chain_create(struct tcf_block *block,
 					  u32 chain_index)
 {
@@ -194,6 +199,7 @@ static struct tcf_chain *tcf_chain_create(struct tcf_block *block,
 	chain = kzalloc(sizeof(*chain), GFP_KERNEL);
 	if (!chain)
 		return NULL;
+	INIT_LIST_HEAD(&chain->filter_chain_list);
 	list_add_tail(&chain->list, &block->chain_list);
 	chain->block = block;
 	chain->index = chain_index;
@@ -203,10 +209,11 @@ static struct tcf_chain *tcf_chain_create(struct tcf_block *block,
 
 static void tcf_chain_flush(struct tcf_chain *chain)
 {
+	struct tfc_filter_chain_list_item *item;
 	struct tcf_proto *tp;
 
-	if (*chain->p_filter_chain)
-		RCU_INIT_POINTER(*chain->p_filter_chain, NULL);
+	list_for_each_entry(item, &chain->filter_chain_list, list)
+		RCU_INIT_POINTER(*item->p_filter_chain, NULL);
 	while ((tp = rtnl_dereference(chain->filter_chain)) != NULL) {
 		RCU_INIT_POINTER(chain->filter_chain, tp->next);
 		tcf_proto_destroy(tp);
@@ -248,11 +255,40 @@ void tcf_chain_put(struct tcf_chain *chain)
 }
 EXPORT_SYMBOL(tcf_chain_put);
 
-static void
-tcf_chain_filter_chain_ptr_set(struct tcf_chain *chain,
+static int
+tcf_chain_filter_chain_ptr_add(struct tcf_chain *chain,
 			       struct tcf_proto __rcu **p_filter_chain)
 {
-	chain->p_filter_chain = p_filter_chain;
+	struct tfc_filter_chain_list_item *item;
+
+	item = kmalloc(sizeof(*item), GFP_KERNEL);
+	if (!item)
+		return -ENOMEM;
+	item->p_filter_chain = p_filter_chain;
+	list_add(&item->list, &chain->filter_chain_list);
+	return 0;
+}
+
+static void
+tcf_chain_filter_chain_ptr_del(struct tcf_chain *chain,
+			       struct tcf_proto __rcu **p_filter_chain)
+{
+	struct tfc_filter_chain_list_item *item;
+
+	list_for_each_entry(item, &chain->filter_chain_list, list) {
+		if (!p_filter_chain ||
+		    item->p_filter_chain == p_filter_chain) {
+			list_del(&item->list);
+			kfree(item);
+			return;
+		}
+	}
+	WARN_ON(1);
+}
+
+static struct tcf_chain *tcf_block_chain_zero(struct tcf_block *block)
+{
+	return list_first_entry(&block->chain_list, struct tcf_chain, list);
 }
 
 int tcf_block_get(struct tcf_block **p_block,
@@ -271,7 +307,7 @@ int tcf_block_get(struct tcf_block **p_block,
 		err = -ENOMEM;
 		goto err_chain_create;
 	}
-	tcf_chain_filter_chain_ptr_set(chain, p_filter_chain);
+	tcf_chain_filter_chain_ptr_add(chain, p_filter_chain);
 	*p_block = block;
 	return 0;
 
@@ -287,6 +323,8 @@ void tcf_block_put(struct tcf_block *block)
 
 	if (!block)
 		return;
+
+	tcf_chain_filter_chain_ptr_del(tcf_block_chain_zero(block), NULL);
 
 	list_for_each_entry_safe(chain, tmp, &block->chain_list, list)
 		tcf_chain_destroy(chain);
@@ -362,9 +400,13 @@ static void tcf_chain_tp_insert(struct tcf_chain *chain,
 				struct tcf_chain_info *chain_info,
 				struct tcf_proto *tp)
 {
-	if (chain->p_filter_chain &&
-	    *chain_info->pprev == chain->filter_chain)
-		rcu_assign_pointer(*chain->p_filter_chain, tp);
+	if (*chain_info->pprev == chain->filter_chain) {
+		struct tfc_filter_chain_list_item *item;
+
+		list_for_each_entry(item, &chain->filter_chain_list, list)
+			rcu_assign_pointer(*item->p_filter_chain, tp);
+	}
+
 	RCU_INIT_POINTER(tp->next, tcf_chain_tp_prev(chain_info));
 	rcu_assign_pointer(*chain_info->pprev, tp);
 }
@@ -375,8 +417,12 @@ static void tcf_chain_tp_remove(struct tcf_chain *chain,
 {
 	struct tcf_proto *next = rtnl_dereference(chain_info->next);
 
-	if (chain->p_filter_chain && tp == chain->filter_chain)
-		RCU_INIT_POINTER(*chain->p_filter_chain, next);
+	if (tp == chain->filter_chain) {
+		struct tfc_filter_chain_list_item *item;
+
+		list_for_each_entry(item, &chain->filter_chain_list, list)
+			RCU_INIT_POINTER(*item->p_filter_chain, next);
+	}
 	RCU_INIT_POINTER(*chain_info->pprev, next);
 }
 
