@@ -4,7 +4,9 @@
 #include <linux/jiffies.h>
 #include <linux/ktime.h>
 #include <linux/if_vlan.h>
+#include <linux/netdevice.h>
 #include <net/sch_generic.h>
+#include <net/net_namespace.h>
 
 #define DEFAULT_TX_QUEUE_LEN	1000
 
@@ -130,6 +132,11 @@ static inline __be16 tc_skb_protocol(const struct sk_buff *skb)
 static inline unsigned int psched_mtu(const struct net_device *dev)
 {
 	return dev->mtu + dev->hard_header_len;
+}
+
+static inline struct net *qdisc_net(struct Qdisc *q)
+{
+	return dev_net(q->dev_queue->dev);
 }
 
 #endif
