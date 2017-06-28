@@ -654,6 +654,7 @@ static int call_mfc_entry_notifier(struct notifier_block *nb, struct net *net,
 static int vif_delete(struct mr_table *mrt, int vifi, int notify,
 		      struct list_head *head)
 {
+	struct net *net = read_pnet(&mrt->net);
 	struct vif_device *v;
 	struct net_device *dev;
 	struct in_device *in_dev;
@@ -662,6 +663,7 @@ static int vif_delete(struct mr_table *mrt, int vifi, int notify,
 		return -EADDRNOTAVAIL;
 
 	v = &mrt->vif_table[vifi];
+	call_vif_entry_notifier(NULL, net, FIB_EVENT_VIF_ADD, v, vifi);
 
 	write_lock_bh(&mrt_lock);
 	dev = v->dev;
@@ -917,6 +919,7 @@ static int vif_add(struct net *net, struct mr_table *mrt,
 	if (vifi+1 > mrt->maxvif)
 		mrt->maxvif = vifi+1;
 	write_unlock_bh(&mrt_lock);
+	call_vif_entry_notifier(NULL, net, FIB_EVENT_VIF_ADD, v, vifi);
 	return 0;
 }
 
@@ -1217,6 +1220,7 @@ static int ipmr_cache_unresolved(struct mr_table *mrt, vifi_t vifi,
 
 static int ipmr_mfc_delete(struct mr_table *mrt, struct mfcctl *mfc, int parent)
 {
+	struct net *net = read_pnet(&mrt->net);
 	struct mfc_cache *c;
 
 	/* The entries are added/deleted only under RTNL */
@@ -1228,6 +1232,7 @@ static int ipmr_mfc_delete(struct mr_table *mrt, struct mfcctl *mfc, int parent)
 		return -ENOENT;
 	rhltable_remove(&mrt->mfc_hash, &c->mnode, ipmr_rht_params);
 	list_del_rcu(&c->list);
+	call_mfc_entry_notifier(NULL, net, FIB_EVENT_ENTRY_DEL, c);
 	mroute_netlink_event(mrt, c, RTM_DELROUTE);
 	ipmr_cache_put(c);
 
@@ -1256,6 +1261,7 @@ static int ipmr_mfc_add(struct net *net, struct mr_table *mrt,
 		if (!mrtsock)
 			c->mfc_flags |= MFC_STATIC;
 		write_unlock_bh(&mrt_lock);
+		call_mfc_entry_notifier(NULL, net, FIB_EVENT_ENTRY_REPLACE, c);
 		mroute_netlink_event(mrt, c, RTM_NEWROUTE);
 		return 0;
 	}
@@ -1305,6 +1311,7 @@ static int ipmr_mfc_add(struct net *net, struct mr_table *mrt,
 		ipmr_cache_resolve(net, mrt, uc, c);
 		ipmr_cache_free(uc);
 	}
+	call_mfc_entry_notifier(NULL, net, FIB_EVENT_ENTRY_ADD, c);
 	mroute_netlink_event(mrt, c, RTM_NEWROUTE);
 	return 0;
 }
@@ -1312,6 +1319,7 @@ static int ipmr_mfc_add(struct net *net, struct mr_table *mrt,
 /* Close the multicast socket, and clear the vif tables etc */
 static void mroute_clean_tables(struct mr_table *mrt, bool all)
 {
+	struct net *net = read_pnet(&mrt->net);
 	struct mfc_cache *c, *tmp;
 	LIST_HEAD(list);
 	int i;
@@ -1330,6 +1338,7 @@ static void mroute_clean_tables(struct mr_table *mrt, bool all)
 			continue;
 		rhltable_remove(&mrt->mfc_hash, &c->mnode, ipmr_rht_params);
 		list_del_rcu(&c->list);
+		call_mfc_entry_notifier(NULL, net, FIB_EVENT_ENTRY_DEL, c);
 		mroute_netlink_event(mrt, c, RTM_DELROUTE);
 		ipmr_cache_put(c);
 	}
