@@ -264,6 +264,16 @@ static void __net_exit ipmr_rules_exit(struct net *net)
 	fib_rules_unregister(net->ipv4.mr_rules_ops);
 	rtnl_unlock();
 }
+
+int ipmr_rules_dump(struct net *net, struct notifier_block *nb)
+{
+	return fib_rules_dump(net, nb, RTNL_FAMILY_IPMR);
+}
+
+unsigned int ipmr_rules_seq_read(struct net *net)
+{
+	return fib_rules_seq_read(net, RTNL_FAMILY_IPMR);
+}
 #else
 #define ipmr_for_each_table(mrt, net) \
 	for (mrt = net->ipv4.mrt; mrt; mrt = NULL)
@@ -297,6 +307,16 @@ static void __net_exit ipmr_rules_exit(struct net *net)
 	ipmr_free_table(net->ipv4.mrt);
 	net->ipv4.mrt = NULL;
 	rtnl_unlock();
+}
+
+static inline int ipmr_rules_dump(struct net *net, struct notifier_block *nb)
+{
+	return 0;
+}
+
+unsigned int ipmr_rules_seq_read(struct net *net)
+{
+	return 0;
 }
 #endif
 
@@ -586,6 +606,46 @@ static struct net_device *ipmr_reg_vif(struct net *net, struct mr_table *mrt)
 	return NULL;
 }
 #endif
+
+static int call_vif_entry_notifier(struct notifier_block *nb, struct net *net,
+				   enum fib_event_type event_type,
+				   struct vif_device *vif, int vif_index)
+{
+	struct vif_entry_notifier_info info = {
+		.info = {
+			.family = RTNL_FAMILY_IPMR,
+			.net = net,
+		},
+		.dev = vif->dev,
+		.vif_index = vif_index,
+		.vif_flags = vif->flags,
+	};
+
+	if (nb)
+		return call_fib_notifier(nb, net, event_type, &info.info);
+
+	net->ipv4.ipmr_seq++;
+	return call_fib_notifiers(net, event_type, &info.info);
+}
+
+static int call_mfc_entry_notifier(struct notifier_block *nb, struct net *net,
+				   enum fib_event_type event_type,
+				   struct mfc_cache *mfc)
+{
+	struct mfc_entry_notifier_info info = {
+		.info = {
+			.family = RTNL_FAMILY_IPMR,
+			.net = net,
+		},
+		.mfc = mfc,
+	};
+
+	if (nb)
+		return call_fib_notifier(nb, net, event_type, &info.info);
+
+	net->ipv4.ipmr_seq++;
+	return call_fib_notifiers(net, event_type, &info.info);
+}
 
 /**
  *	vif_delete - Delete a VIF entry
@@ -3055,6 +3115,65 @@ static const struct net_protocol pim_protocol = {
 };
 #endif
 
+static unsigned int ipmr_seq_read(struct net *net)
+{
+	ASSERT_RTNL();
+
+	return net->ipv4.ipmr_seq + ipmr_rules_seq_read(net);
+}
+
+static int ipmr_dump(struct net *net, struct notifier_block *nb)
+{
+	struct mr_table *mrt;
+	int err;
+
+	err = ipmr_rules_dump(net, nb);
+	if (err)
+		return err;
+
+	ipmr_for_each_table(mrt, net) {
+		struct mfc_cache *mfc;
+		struct vif_device *v = &mrt->vif_table[0];
+		int vifi;
+
+		/* notifiy on table VIF entries */
+		for (vifi = 0; vifi < mrt->maxvif; vifi++, v++) {
+			if (!v->dev)
+				continue;
+
+			call_vif_entry_notifier(nb, net, FIB_EVENT_VIF_ADD,
+						v, vifi);
+		}
+
+		/* Notify on table MFC entries */
+		list_for_each_entry_rcu(mfc, &mrt->mfc_cache_list, list)
+			call_mfc_entry_notifier(nb, net, FIB_EVENT_ENTRY_ADD,
+						mfc);
+	}
+
+	return 0;
+}
+
+static const struct fib_notifier_ops ipmr_notifier_ops_template = {
+	.family		= RTNL_FAMILY_IPMR,
+	.fib_seq_read	= ipmr_seq_read,
+	.fib_dump	= ipmr_dump,
+};
+
+int __net_init ipmr_notifier_init(struct net *net)
+{
+	struct fib_notifier_ops *ops;
+
+	net->ipv4.ipmr_seq = 0;
+
+	ops = fib_notifier_ops_register(&ipmr_notifier_ops_template, net);
+	if (IS_ERR(ops))
+		return PTR_ERR(ops);
+	net->ipv4.ipmr_notifier_ops = ops;
+
+	return 0;
+}
+
 /* Setup for IP multicast routing */
 static int __net_init ipmr_net_init(struct net *net)
 {
@@ -3062,6 +3181,10 @@ static int __net_init ipmr_net_init(struct net *net)
 
 	err = ipmr_rules_init(net);
 	if (err < 0)
+		goto fail;
+
+	err = ipmr_notifier_init(net);
+	if (err)
 		goto fail;
 
 #ifdef CONFIG_PROC_FS

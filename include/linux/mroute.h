@@ -5,6 +5,7 @@
 #include <linux/pim.h>
 #include <linux/rhashtable.h>
 #include <net/sock.h>
+#include <net/fib_notifier.h>
 #include <uapi/linux/mroute.h>
 
 #ifdef CONFIG_IP_MROUTE
@@ -56,6 +57,13 @@ struct vif_device {
 	unsigned short	flags;			/* Control flags 		*/
 	__be32		local,remote;		/* Addresses(remote for tunnels)*/
 	int		link;			/* Physical interface index	*/
+};
+
+struct vif_entry_notifier_info {
+	struct fib_notifier_info info;
+	struct net_device *dev;
+	int vif_index;
+	unsigned short vif_flags;
 };
 
 #define VIFF_STATIC 0x8000
@@ -143,6 +151,11 @@ struct mfc_cache {
 	} mfc_un;
 	struct list_head list;
 	struct rcu_head	rcu;
+};
+
+struct mfc_entry_notifier_info {
+	struct fib_notifier_info info;
+	struct mfc_cache *mfc;
 };
 
 struct rtmsg;
