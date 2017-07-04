@@ -871,4 +871,16 @@ struct tc_pie_xstats {
 	__u32 maxq;             /* maximum queue size */
 	__u32 ecn_mark;         /* packets marked with ecn*/
 };
+
+/* Ingress/clsact */
+
+enum {
+	TCA_CLSACT_UNSPEC,
+	TCA_CLSACT_INGRESS_BLOCK,
+	TCA_CLSACT_EGRESS_BLOCK,
+	__TCA_CLSACT_MAX
+};
+
+#define TCA_CLSACT_MAX	(__TCA_CLSACT_MAX - 1)
+
 #endif
