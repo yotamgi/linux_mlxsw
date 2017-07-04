@@ -58,13 +58,42 @@ static struct tcf_block *ingress_tcf_block(struct Qdisc *sch, unsigned long cl)
 	return q->block;
 }
 
+static const struct nla_policy ingress_policy[TCA_CLSACT_MAX + 1] = {
+	[TCA_CLSACT_INGRESS_BLOCK]	= { .type = NLA_U32 },
+};
+
+static int ingress_parse_opt(struct nlattr *opt, u32 *p_ingress_block_index)
+{
+	struct nlattr *tb[TCA_CLSACT_MAX + 1];
+	int err;
+
+	*p_ingress_block_index = 0;
+
+	if (!opt)
+		return 0;
+	err = nla_parse_nested(tb, TCA_CLSACT_MAX, opt, ingress_policy, NULL);
+	if (err)
+		return err;
+
+	if (tb[TCA_CLSACT_INGRESS_BLOCK])
+		*p_ingress_block_index =
+			nla_get_u32(tb[TCA_CLSACT_INGRESS_BLOCK]);
+	return 0;
+}
+
 static int ingress_init(struct Qdisc *sch, struct nlattr *opt)
 {
 	struct ingress_sched_data *q = qdisc_priv(sch);
 	struct net_device *dev = qdisc_dev(sch);
+	u32 ingress_block_index;
 	int err;
 
-	err = tcf_block_get(&q->block, &dev->ingress_cl_list, sch);
+	err = ingress_parse_opt(opt, &ingress_block_index);
+	if (err)
+		return err;
+
+	err = tcf_block_get_shared(&q->block, qdisc_net(sch),
+				   ingress_block_index, &dev->ingress_cl_list);
 	if (err)
 		return err;
 
@@ -77,17 +106,21 @@ static int ingress_init(struct Qdisc *sch, struct nlattr *opt)
 static void ingress_destroy(struct Qdisc *sch)
 {
 	struct ingress_sched_data *q = qdisc_priv(sch);
+	struct net_device *dev = qdisc_dev(sch);
 
-	tcf_block_put(q->block);
+	tcf_block_put_shared(q->block, qdisc_net(sch), &dev->ingress_cl_list);
 	net_dec_ingress_queue();
 }
 
 static int ingress_dump(struct Qdisc *sch, struct sk_buff *skb)
 {
+	struct ingress_sched_data *q = qdisc_priv(sch);
 	struct nlattr *nest;
 
 	nest = nla_nest_start(skb, TCA_OPTIONS);
 	if (nest == NULL)
+		goto nla_put_failure;
+	if (nla_put_u32(skb, TCA_CLSACT_INGRESS_BLOCK, q->block->index))
 		goto nla_put_failure;
 
 	return nla_nest_end(skb, nest);
@@ -159,17 +192,54 @@ static struct tcf_block *clsact_tcf_block(struct Qdisc *sch, unsigned long cl)
 	}
 }
 
+static const struct nla_policy clsact_policy[TCA_CLSACT_MAX + 1] = {
+	[TCA_CLSACT_INGRESS_BLOCK]	= { .type = NLA_U32 },
+	[TCA_CLSACT_EGRESS_BLOCK]	= { .type = NLA_U32 },
+};
+
+static int clsact_parse_opt(struct nlattr *opt, u32 *p_ingress_block_index,
+			    u32 *p_egress_block_index)
+{
+	struct nlattr *tb[TCA_CLSACT_MAX + 1];
+	int err;
+
+	*p_ingress_block_index = 0;
+	*p_egress_block_index = 0;
+
+	if (!opt)
+		return 0;
+	err = nla_parse_nested(tb, TCA_CLSACT_MAX, opt, clsact_policy, NULL);
+	if (err)
+		return err;
+
+	if (tb[TCA_CLSACT_INGRESS_BLOCK])
+		*p_ingress_block_index =
+			nla_get_u32(tb[TCA_CLSACT_INGRESS_BLOCK]);
+	if (tb[TCA_CLSACT_EGRESS_BLOCK])
+		*p_egress_block_index =
+			nla_get_u32(tb[TCA_CLSACT_EGRESS_BLOCK]);
+	return 0;
+}
+
 static int clsact_init(struct Qdisc *sch, struct nlattr *opt)
 {
 	struct clsact_sched_data *q = qdisc_priv(sch);
 	struct net_device *dev = qdisc_dev(sch);
+	u32 ingress_block_index;
+	u32 egress_block_index;
 	int err;
 
-	err = tcf_block_get(&q->ingress_block, &dev->ingress_cl_list, sch);
+	err = clsact_parse_opt(opt, &ingress_block_index, &egress_block_index);
 	if (err)
 		return err;
 
-	err = tcf_block_get(&q->egress_block, &dev->egress_cl_list, sch);
+	err = tcf_block_get_shared(&q->ingress_block, qdisc_net(sch),
+				   ingress_block_index, &dev->ingress_cl_list);
+	if (err)
+		return err;
+
+	err = tcf_block_get_shared(&q->egress_block, qdisc_net(sch),
+				   egress_block_index, &dev->egress_cl_list);
 	if (err)
 		return err;
 
@@ -184,12 +254,35 @@ static int clsact_init(struct Qdisc *sch, struct nlattr *opt)
 static void clsact_destroy(struct Qdisc *sch)
 {
 	struct clsact_sched_data *q = qdisc_priv(sch);
+	struct net_device *dev = qdisc_dev(sch);
 
-	tcf_block_put(q->egress_block);
-	tcf_block_put(q->ingress_block);
+	tcf_block_put_shared(q->egress_block, qdisc_net(sch),
+			     &dev->ingress_cl_list);
+	tcf_block_put_shared(q->ingress_block, qdisc_net(sch),
+			     &dev->egress_cl_list);
 
 	net_dec_ingress_queue();
 	net_dec_egress_queue();
+}
+
+static int clsact_dump(struct Qdisc *sch, struct sk_buff *skb)
+{
+	struct clsact_sched_data *q = qdisc_priv(sch);
+	struct nlattr *nest;
+
+	nest = nla_nest_start(skb, TCA_OPTIONS);
+	if (!nest)
+		goto nla_put_failure;
+	if (nla_put_u32(skb, TCA_CLSACT_INGRESS_BLOCK, q->ingress_block->index))
+		goto nla_put_failure;
+	if (nla_put_u32(skb, TCA_CLSACT_EGRESS_BLOCK, q->egress_block->index))
+		goto nla_put_failure;
+
+	return nla_nest_end(skb, nest);
+
+nla_put_failure:
+	nla_nest_cancel(skb, nest);
+	return -1;
 }
 
 static const struct Qdisc_class_ops clsact_class_ops = {
@@ -209,7 +302,7 @@ static struct Qdisc_ops clsact_qdisc_ops __read_mostly = {
 	.priv_size	=	sizeof(struct clsact_sched_data),
 	.init		=	clsact_init,
 	.destroy	=	clsact_destroy,
-	.dump		=	ingress_dump,
+	.dump		=	clsact_dump,
 	.owner		=	THIS_MODULE,
 };
 
