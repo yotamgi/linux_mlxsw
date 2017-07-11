@@ -131,9 +131,7 @@ static int basic_set_parms(struct net *net, struct tcf_proto *tp,
 	int err;
 	struct tcf_exts e;
 
-	err = tcf_exts_init(&e, TCA_BASIC_ACT, TCA_BASIC_POLICE);
-	if (err < 0)
-		return err;
+	tcf_exts_init(&e, TCA_BASIC_ACT, TCA_BASIC_POLICE);
 	err = tcf_exts_validate(net, tp, tb, est, &e, ovr);
 	if (err < 0)
 		goto errout;
@@ -147,7 +145,7 @@ static int basic_set_parms(struct net *net, struct tcf_proto *tp,
 		tcf_bind_filter(tp, &f->res, base);
 	}
 
-	tcf_exts_change(tp, &f->exts, &e);
+	tcf_exts_change(&f->exts, &e);
 	f->tp = tp;
 
 	return 0;
@@ -183,9 +181,7 @@ static int basic_change(struct net *net, struct sk_buff *in_skb,
 	if (!fnew)
 		return -ENOBUFS;
 
-	err = tcf_exts_init(&fnew->exts, TCA_BASIC_ACT, TCA_BASIC_POLICE);
-	if (err < 0)
-		goto errout;
+	tcf_exts_init(&fnew->exts, TCA_BASIC_ACT, TCA_BASIC_POLICE);
 
 	err = -EINVAL;
 	if (handle) {

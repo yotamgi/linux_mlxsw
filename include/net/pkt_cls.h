@@ -88,8 +88,7 @@ tcf_unbind_filter(struct tcf_proto *tp, struct tcf_result *r)
 struct tcf_exts {
 #ifdef CONFIG_NET_CLS_ACT
 	__u32	type; /* for backward compat(TCA_OLD_COMPAT) */
-	int nr_actions;
-	struct tc_action **actions;
+	struct tc_action __rcu *action_list;
 #endif
 	/* Map to export classifier specific extension TLV types to the
 	 * generic extensions API. Unsupported extensions must be set to 0.
@@ -98,32 +97,32 @@ struct tcf_exts {
 	int police;
 };
 
-static inline int tcf_exts_init(struct tcf_exts *exts, int action, int police)
+#define tcf_exts_for_each(a, exts)				\
+	for (a = rtnl_dereference(exts->action_list);		\
+	     a; a = rtnl_dereference(a->next))
+
+#define tcf_exts_for_each_rcu_bh(a, exts)			\
+	for (a = rcu_dereference_bh(exts->action_list);		\
+	     a; a = rcu_dereference_bh(a->next))
+
+static inline void tcf_exts_init(struct tcf_exts *exts, int action, int police)
 {
 #ifdef CONFIG_NET_CLS_ACT
 	exts->type = 0;
-	exts->nr_actions = 0;
-	exts->actions = kcalloc(TCA_ACT_MAX_PRIO, sizeof(struct tc_action *),
-				GFP_KERNEL);
-	if (!exts->actions)
-		return -ENOMEM;
+	RCU_INIT_POINTER(exts->action_list, NULL);
 #endif
 	exts->action = action;
 	exts->police = police;
-	return 0;
 }
 
 static inline void tcf_exts_to_list(const struct tcf_exts *exts,
 				    struct list_head *actions)
 {
 #ifdef CONFIG_NET_CLS_ACT
-	int i;
+	struct tc_action *a;
 
-	for (i = 0; i < exts->nr_actions; i++) {
-		struct tc_action *a = exts->actions[i];
-
+	tcf_exts_for_each(a, exts)
 		list_add_tail(&a->list, actions);
-	}
 #endif
 }
 
@@ -132,16 +131,11 @@ tcf_exts_stats_update(const struct tcf_exts *exts,
 		      u64 bytes, u64 packets, u64 lastuse)
 {
 #ifdef CONFIG_NET_CLS_ACT
-	int i;
+	struct tc_action *a;
 
 	preempt_disable();
-
-	for (i = 0; i < exts->nr_actions; i++) {
-		struct tc_action *a = exts->actions[i];
-
+	tcf_exts_for_each(a, exts)
 		tcf_action_stats_update(a, bytes, packets, lastuse);
-	}
-
 	preempt_enable();
 #endif
 }
@@ -155,7 +149,7 @@ tcf_exts_stats_update(const struct tcf_exts *exts,
 static inline bool tcf_exts_has_actions(struct tcf_exts *exts)
 {
 #ifdef CONFIG_NET_CLS_ACT
-	return exts->nr_actions;
+	return rtnl_dereference(exts->action_list);
 #else
 	return false;
 #endif
@@ -170,7 +164,8 @@ static inline bool tcf_exts_has_actions(struct tcf_exts *exts)
 static inline bool tcf_exts_has_one_action(struct tcf_exts *exts)
 {
 #ifdef CONFIG_NET_CLS_ACT
-	return exts->nr_actions == 1;
+	return rtnl_dereference(exts->action_list) &&
+	       !rtnl_dereference(exts->action_list->next);
 #else
 	return false;
 #endif
@@ -192,7 +187,7 @@ tcf_exts_exec(struct sk_buff *skb, struct tcf_exts *exts,
 	      struct tcf_result *res)
 {
 #ifdef CONFIG_NET_CLS_ACT
-	return tcf_action_exec(skb, exts->actions, exts->nr_actions, res);
+	return tcf_action_exec(skb, exts, res);
 #endif
 	return TC_ACT_OK;
 }
@@ -201,8 +196,7 @@ int tcf_exts_validate(struct net *net, struct tcf_proto *tp,
 		      struct nlattr **tb, struct nlattr *rate_tlv,
 		      struct tcf_exts *exts, bool ovr);
 void tcf_exts_destroy(struct tcf_exts *exts);
-void tcf_exts_change(struct tcf_proto *tp, struct tcf_exts *dst,
-		     struct tcf_exts *src);
+void tcf_exts_change(struct tcf_exts *dst, struct tcf_exts *src);
 int tcf_exts_dump(struct sk_buff *skb, struct tcf_exts *exts);
 int tcf_exts_dump_stats(struct sk_buff *skb, struct tcf_exts *exts);
 int tcf_exts_get_dev(struct net_device *dev, struct tcf_exts *exts,

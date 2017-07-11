@@ -457,21 +457,19 @@ static struct tc_action_ops *tc_lookup_action(struct nlattr *kind)
 
 /*TCA_ACT_MAX_PRIO is 32, there count upto 32 */
 #define TCA_ACT_MAX_PRIO_MASK 0x1FF
-int tcf_action_exec(struct sk_buff *skb, struct tc_action **actions,
-		    int nr_actions, struct tcf_result *res)
+int tcf_action_exec(struct sk_buff *skb, struct tcf_exts *exts,
+		    struct tcf_result *res)
 {
 	u32 jmp_prgcnt = 0;
 	u32 jmp_ttl = TCA_ACT_MAX_PRIO; /*matches actions per filter */
-	int i;
+	struct tc_action *a;
 	int ret = TC_ACT_OK;
 
 	if (skb_skip_tc_classify(skb))
 		return TC_ACT_OK;
 
 restart_act_graph:
-	for (i = 0; i < nr_actions; i++) {
-		const struct tc_action *a = actions[i];
-
+	tcf_exts_for_each_rcu_bh(a, exts) {
 		if (jmp_prgcnt > 0) {
 			jmp_prgcnt -= 1;
 			continue;
@@ -483,7 +481,7 @@ repeat:
 
 		if (TC_ACT_EXT_CMP(ret, TC_ACT_JUMP)) {
 			jmp_prgcnt = ret & TCA_ACT_MAX_PRIO_MASK;
-			if (!jmp_prgcnt || (jmp_prgcnt > nr_actions)) {
+			if (!jmp_prgcnt) {
 				/* faulty opcode, stop pipeline */
 				return TC_ACT_OK;
 			} else {
@@ -500,6 +498,10 @@ repeat:
 		if (ret != TC_ACT_PIPE)
 			break;
 	}
+
+	if (jmp_prgcnt > 0)
+		/* faulty opcode, stop pipeline */
+		return TC_ACT_OK;
 
 	return ret;
 }
