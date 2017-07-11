@@ -836,8 +836,6 @@ void tcf_exts_destroy(struct tcf_exts *exts)
 
 	tcf_exts_to_list(exts, &actions);
 	tcf_action_destroy(&actions, TCA_ACT_UNBIND);
-	kfree(exts->actions);
-	exts->nr_actions = 0;
 #endif
 }
 EXPORT_SYMBOL(tcf_exts_destroy);
@@ -857,20 +855,22 @@ int tcf_exts_validate(struct net *net, struct tcf_proto *tp, struct nlattr **tb,
 				return PTR_ERR(act);
 
 			act->type = exts->type = TCA_OLD_COMPAT;
-			exts->actions[0] = act;
-			exts->nr_actions = 1;
+			exts->action_list = act;
 		} else if (exts->action && tb[exts->action]) {
+			struct tc_action **pprev;
 			LIST_HEAD(actions);
-			int err, i = 0;
+			int err;
 
 			err = tcf_action_init(net, tp, tb[exts->action],
 					      rate_tlv, NULL, ovr, TCA_ACT_BIND,
 					      &actions);
 			if (err)
 				return err;
-			list_for_each_entry(act, &actions, list)
-				exts->actions[i++] = act;
-			exts->nr_actions = i;
+			pprev = &exts->action_list;
+			list_for_each_entry(act, &actions, list) {
+				*pprev = act;
+				pprev = &act->next;
+			}
 		}
 	}
 #else
@@ -889,12 +889,11 @@ void tcf_exts_change(struct tcf_proto *tp, struct tcf_exts *dst,
 #ifdef CONFIG_NET_CLS_ACT
 	struct tcf_exts old = *dst;
 
-	tcf_tree_lock(tp);
-	dst->nr_actions = src->nr_actions;
-	dst->actions = src->actions;
+	rcu_assign_pointer(dst->action_list,
+			   rtnl_dereference(src->action_list));
 	dst->type = src->type;
-	tcf_tree_unlock(tp);
 
+	synchronize_rcu();
 	tcf_exts_destroy(&old);
 #endif
 }
@@ -903,10 +902,7 @@ EXPORT_SYMBOL(tcf_exts_change);
 #ifdef CONFIG_NET_CLS_ACT
 static struct tc_action *tcf_exts_first_act(struct tcf_exts *exts)
 {
-	if (exts->nr_actions == 0)
-		return NULL;
-	else
-		return exts->actions[0];
+	return exts->action_list;
 }
 #endif
 

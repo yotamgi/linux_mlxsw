@@ -425,9 +425,7 @@ static int flow_change(struct net *net, struct sk_buff *in_skb,
 			return -EOPNOTSUPP;
 	}
 
-	err = tcf_exts_init(&e, TCA_FLOW_ACT, TCA_FLOW_POLICE);
-	if (err < 0)
-		goto err1;
+	tcf_exts_init(&e, TCA_FLOW_ACT, TCA_FLOW_POLICE);
 	err = tcf_exts_validate(net, tp, tb, tca[TCA_RATE], &e, ovr);
 	if (err < 0)
 		goto err1;
@@ -441,9 +439,7 @@ static int flow_change(struct net *net, struct sk_buff *in_skb,
 	if (!fnew)
 		goto err2;
 
-	err = tcf_exts_init(&fnew->exts, TCA_FLOW_ACT, TCA_FLOW_POLICE);
-	if (err < 0)
-		goto err3;
+	tcf_exts_init(&fnew->exts, TCA_FLOW_ACT, TCA_FLOW_POLICE);
 
 	fold = (struct flow_filter *)*arg;
 	if (fold) {

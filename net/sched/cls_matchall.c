@@ -123,9 +123,7 @@ static int mall_set_parms(struct net *net, struct tcf_proto *tp,
 	struct tcf_exts e;
 	int err;
 
-	err = tcf_exts_init(&e, TCA_MATCHALL_ACT, 0);
-	if (err)
-		return err;
+	tcf_exts_init(&e, TCA_MATCHALL_ACT, 0);
 	err = tcf_exts_validate(net, tp, tb, est, &e, ovr);
 	if (err < 0)
 		goto errout;
@@ -176,9 +174,7 @@ static int mall_change(struct net *net, struct sk_buff *in_skb,
 	if (!new)
 		return -ENOBUFS;
 
-	err = tcf_exts_init(&new->exts, TCA_MATCHALL_ACT, 0);
-	if (err)
-		goto err_exts_init;
+	tcf_exts_init(&new->exts, TCA_MATCHALL_ACT, 0);
 
 	if (!handle)
 		handle = 1;
@@ -209,7 +205,6 @@ static int mall_change(struct net *net, struct sk_buff *in_skb,
 err_replace_hw_filter:
 err_set_parms:
 	tcf_exts_destroy(&new->exts);
-err_exts_init:
 	kfree(new);
 	return err;
 }

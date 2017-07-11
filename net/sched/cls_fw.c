@@ -200,9 +200,7 @@ fw_change_attrs(struct net *net, struct tcf_proto *tp, struct fw_filter *f,
 	u32 mask;
 	int err;
 
-	err = tcf_exts_init(&e, TCA_FW_ACT, TCA_FW_POLICE);
-	if (err < 0)
-		return err;
+	tcf_exts_init(&e, TCA_FW_ACT, TCA_FW_POLICE);
 	err = tcf_exts_validate(net, tp, tb, tca[TCA_RATE], &e, ovr);
 	if (err < 0)
 		goto errout;
@@ -276,11 +274,7 @@ static int fw_change(struct net *net, struct sk_buff *in_skb,
 #endif /* CONFIG_NET_CLS_IND */
 		fnew->tp = f->tp;
 
-		err = tcf_exts_init(&fnew->exts, TCA_FW_ACT, TCA_FW_POLICE);
-		if (err < 0) {
-			kfree(fnew);
-			return err;
-		}
+		tcf_exts_init(&fnew->exts, TCA_FW_ACT, TCA_FW_POLICE);
 
 		err = fw_change_attrs(net, tp, fnew, tb, tca, base, ovr);
 		if (err < 0) {
@@ -324,9 +318,7 @@ static int fw_change(struct net *net, struct sk_buff *in_skb,
 	if (f == NULL)
 		return -ENOBUFS;
 
-	err = tcf_exts_init(&f->exts, TCA_FW_ACT, TCA_FW_POLICE);
-	if (err < 0)
-		goto errout;
+	tcf_exts_init(&f->exts, TCA_FW_ACT, TCA_FW_POLICE);
 	f->id = handle;
 	f->tp = tp;
 

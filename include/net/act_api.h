@@ -21,6 +21,8 @@ struct tcf_hashinfo {
 struct tc_action_ops;
 
 struct tc_action {
+	/* Fast access part */
+	struct tc_action __rcu		*next;
 	const struct tc_action_ops	*ops;
 	__u32				type; /* for backward compat(TCA_OLD_COMPAT) */
 	__u32				order;
@@ -179,15 +181,18 @@ int tcf_register_action(struct tc_action_ops *a, struct pernet_operations *ops);
 int tcf_unregister_action(struct tc_action_ops *a,
 			  struct pernet_operations *ops);
 int tcf_action_destroy(struct list_head *actions, int bind);
-int tcf_action_exec(struct sk_buff *skb, struct tc_action **actions,
-		    int nr_actions, struct tcf_result *res);
+
+struct tcf_exts *exts;
+
+int tcf_action_exec(struct sk_buff *skb, struct tcf_exts *exts,
+		    struct tcf_result *res);
 int tcf_action_init(struct net *net, struct tcf_proto *tp, struct nlattr *nla,
 		    struct nlattr *est, char *name, int ovr, int bind,
 		    struct list_head *actions);
 struct tc_action *tcf_action_init_1(struct net *net, struct tcf_proto *tp,
 				    struct nlattr *nla, struct nlattr *est,
 				    char *name, int ovr, int bind);
-int tcf_action_dump(struct sk_buff *skb, struct list_head *, int, int);
+int tcf_action_dump(struct sk_buff *skb, struct list_head *actions, int, int);
 int tcf_action_dump_old(struct sk_buff *skb, struct tc_action *a, int, int);
 int tcf_action_dump_1(struct sk_buff *skb, struct tc_action *a, int, int);
 int tcf_action_copy_stats(struct sk_buff *, struct tc_action *, int);

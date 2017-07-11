@@ -375,9 +375,7 @@ static int route4_set_parms(struct net *net, struct tcf_proto *tp,
 	struct tcf_exts e;
 	int err;
 
-	err = tcf_exts_init(&e, TCA_ROUTE4_ACT, TCA_ROUTE4_POLICE);
-	if (err < 0)
-		return err;
+	tcf_exts_init(&e, TCA_ROUTE4_ACT, TCA_ROUTE4_POLICE);
 	err = tcf_exts_validate(net, tp, tb, est, &e, ovr);
 	if (err < 0)
 		goto errout;
@@ -488,9 +486,7 @@ static int route4_change(struct net *net, struct sk_buff *in_skb,
 	if (!f)
 		goto errout;
 
-	err = tcf_exts_init(&f->exts, TCA_ROUTE4_ACT, TCA_ROUTE4_POLICE);
-	if (err < 0)
-		goto errout;
+	tcf_exts_init(&f->exts, TCA_ROUTE4_ACT, TCA_ROUTE4_POLICE);
 
 	if (fold) {
 		f->id = fold->id;
