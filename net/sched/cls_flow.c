@@ -424,9 +424,7 @@ static int flow_change(struct net *net, struct sk_buff *in_skb,
 			return -EOPNOTSUPP;
 	}
 
-	err = tcf_exts_init(&e, TCA_FLOW_ACT, TCA_FLOW_POLICE);
-	if (err < 0)
-		goto err1;
+	tcf_exts_init(&e, TCA_FLOW_ACT, TCA_FLOW_POLICE);
 	err = tcf_exts_validate(net, tp, tb, tca[TCA_RATE], &e, ovr);
 	if (err < 0)
 		goto err1;
@@ -440,9 +438,7 @@ static int flow_change(struct net *net, struct sk_buff *in_skb,
 	if (err < 0)
 		goto err2;
 
-	err = tcf_exts_init(&fnew->exts, TCA_FLOW_ACT, TCA_FLOW_POLICE);
-	if (err < 0)
-		goto err3;
+	tcf_exts_init(&fnew->exts, TCA_FLOW_ACT, TCA_FLOW_POLICE);
 
 	fold = (struct flow_filter *)*arg;
 	if (fold) {
@@ -510,7 +506,7 @@ static int flow_change(struct net *net, struct sk_buff *in_skb,
 	setup_deferrable_timer(&fnew->perturb_timer, flow_perturbation,
 			       (unsigned long)fnew);
 
-	tcf_exts_change(tp, &fnew->exts, &e);
+	tcf_exts_change(&fnew->exts, &e);
 
 	netif_keep_dst(qdisc_dev(tp->q));
 

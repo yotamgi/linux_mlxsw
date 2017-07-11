@@ -397,9 +397,7 @@ static int cls_bpf_modify_existing(struct net *net, struct tcf_proto *tp,
 	if ((!is_bpf && !is_ebpf) || (is_bpf && is_ebpf))
 		return -EINVAL;
 
-	ret = tcf_exts_init(&exts, TCA_BPF_ACT, TCA_BPF_POLICE);
-	if (ret < 0)
-		return ret;
+	tcf_exts_init(&exts, TCA_BPF_ACT, TCA_BPF_POLICE);
 	ret = tcf_exts_validate(net, tp, tb, est, &exts, ovr);
 	if (ret < 0)
 		goto errout;
@@ -436,7 +434,7 @@ static int cls_bpf_modify_existing(struct net *net, struct tcf_proto *tp,
 		tcf_bind_filter(tp, &prog->res, base);
 	}
 
-	tcf_exts_change(tp, &prog->exts, &exts);
+	tcf_exts_change(&prog->exts, &exts);
 	return 0;
 
 errout:
@@ -488,9 +486,7 @@ static int cls_bpf_change(struct net *net, struct sk_buff *in_skb,
 	if (!prog)
 		return -ENOBUFS;
 
-	ret = tcf_exts_init(&prog->exts, TCA_BPF_ACT, TCA_BPF_POLICE);
-	if (ret < 0)
-		goto errout;
+	tcf_exts_init(&prog->exts, TCA_BPF_ACT, TCA_BPF_POLICE);
 
 	if (oldprog) {
 		if (handle && oldprog->handle != handle) {

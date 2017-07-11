@@ -855,9 +855,7 @@ static int fl_set_parms(struct net *net, struct tcf_proto *tp,
 	struct tcf_exts e;
 	int err;
 
-	err = tcf_exts_init(&e, TCA_FLOWER_ACT, 0);
-	if (err < 0)
-		return err;
+	tcf_exts_init(&e, TCA_FLOWER_ACT, 0);
 	err = tcf_exts_validate(net, tp, tb, est, &e, ovr);
 	if (err < 0)
 		goto errout;
@@ -874,7 +872,7 @@ static int fl_set_parms(struct net *net, struct tcf_proto *tp,
 	fl_mask_update_range(mask);
 	fl_set_masked_key(&f->mkey, &f->key, mask);
 
-	tcf_exts_change(tp, &f->exts, &e);
+	tcf_exts_change(&f->exts, &e);
 
 	return 0;
 errout:
@@ -938,9 +936,7 @@ static int fl_change(struct net *net, struct sk_buff *in_skb,
 		goto errout_tb;
 	}
 
-	err = tcf_exts_init(&fnew->exts, TCA_FLOWER_ACT, 0);
-	if (err < 0)
-		goto errout;
+	tcf_exts_init(&fnew->exts, TCA_FLOWER_ACT, 0);
 
 	if (!handle) {
 		handle = fl_grab_new_handle(tp, head);
