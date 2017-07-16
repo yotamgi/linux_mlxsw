@@ -138,6 +138,7 @@ struct mfc_cache {
 			unsigned long wrong_if;
 			unsigned long lastuse;
 			unsigned char ttls[MAXVIFS];
+			refcount_t refcount;
 		} res;
 	} mfc_un;
 	struct list_head list;
@@ -148,4 +149,17 @@ struct rtmsg;
 int ipmr_get_route(struct net *net, struct sk_buff *skb,
 		   __be32 saddr, __be32 daddr,
 		   struct rtmsg *rtm, u32 portid);
+
+void ipmr_cache_free(struct mfc_cache *c);
+
+static inline void ipmr_cache_put(struct mfc_cache *c)
+{
+	if (refcount_dec_and_test(&c->mfc_un.res.refcount))
+		ipmr_cache_free(c);
+}
+static inline void ipmr_cache_hold(struct mfc_cache *c)
+{
+	refcount_inc(&c->mfc_un.res.refcount);
+}
+
 #endif
