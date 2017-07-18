@@ -345,6 +345,10 @@ static void rt6_info_init(struct rt6_info *rt)
 	memset(dst + 1, 0, sizeof(*rt) - sizeof(*dst));
 	INIT_LIST_HEAD(&rt->rt6i_siblings);
 	INIT_LIST_HEAD(&rt->rt6i_uncached);
+	/* Make sure route can't be released as long as it's used by
+	 * the FIB.
+	 */
+	refcount_set(&rt->rt6i_extref, 1);
 }
 
 /* allocate dst with ip6_dst_ops */

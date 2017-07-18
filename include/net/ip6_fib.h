@@ -119,6 +119,7 @@ struct rt6_info {
 	unsigned int			rt6i_nsiblings;
 
 	atomic_t			rt6i_ref;
+	refcount_t			rt6i_extref;
 
 	/* These are in a separate cache line. */
 	struct rt6key			rt6i_dst ____cacheline_aligned_in_smp;
@@ -185,6 +186,22 @@ static inline void ip6_rt_put(struct rt6_info *rt)
 	 */
 	BUILD_BUG_ON(offsetof(struct rt6_info, dst) != 0);
 	dst_release(&rt->dst);
+}
+
+void rt6_free_pcpu(struct rt6_info *non_pcpu_rt);
+
+static inline void rt6_get(struct rt6_info *rt)
+{
+	refcount_inc(&rt->rt6i_extref);
+}
+
+static inline void rt6_put(struct rt6_info *rt)
+{
+	if (refcount_dec_and_test(&rt->rt6i_extref)) {
+		rt6_free_pcpu(rt);
+		dst_dev_put(&rt->dst);
+		dst_release(&rt->dst);
+	}
 }
 
 enum fib6_walk_state {
