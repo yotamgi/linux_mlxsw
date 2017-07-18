@@ -1820,6 +1820,11 @@ static struct rt6_info *ip6_route_info_create(struct fib6_config *cfg,
 		goto out;
 	}
 
+	if (cfg->fc_flags & RTF_OFFLOAD) {
+		NL_SET_ERR_MSG(extack, "Userspace can not set RTF_OFFLOAD");
+		goto out;
+	}
+
 	if (cfg->fc_dst_len > 128) {
 		NL_SET_ERR_MSG(extack, "Invalid prefix length");
 		goto out;
@@ -3327,6 +3332,9 @@ static int rt6_nexthop_info(struct sk_buff *skb, struct rt6_info *rt,
 			goto nla_put_failure;
 	}
 
+	if (rt->rt6i_flags & RTF_OFFLOAD)
+		*flags |= RTNH_F_OFFLOAD;
+
 	/* not needed for multipath encoding b/c it has a rtnexthop struct */
 	if (!skip_oif && rt->dst.dev &&
 	    nla_put_u32(skb, RTA_OIF, rt->dst.dev->ifindex))
@@ -3343,7 +3351,8 @@ nla_put_failure:
 }
 
 /* add multipath next hop */
-static int rt6_add_nexthop(struct sk_buff *skb, struct rt6_info *rt)
+static int rt6_add_nexthop(struct sk_buff *skb, struct rt6_info *rt,
+			   unsigned int *rtm_flags)
 {
 	struct rtnexthop *rtnh;
 	unsigned int flags = 0;
@@ -3359,6 +3368,10 @@ static int rt6_add_nexthop(struct sk_buff *skb, struct rt6_info *rt)
 		goto nla_put_failure;
 
 	rtnh->rtnh_flags = flags;
+	if (rtnh->rtnh_flags & RTNH_F_OFFLOAD) {
+		rtnh->rtnh_flags &= ~RTNH_F_OFFLOAD;
+		*rtm_flags |= RTNH_F_OFFLOAD;
+	}
 
 	/* length of rtnetlink header + attributes */
 	rtnh->rtnh_len = nlmsg_get_pos(skb) - (void *)rtnh;
@@ -3499,12 +3512,12 @@ static int rt6_fill_node(struct net *net,
 		if (!mp)
 			goto nla_put_failure;
 
-		if (rt6_add_nexthop(skb, rt) < 0)
+		if (rt6_add_nexthop(skb, rt, &rtm->rtm_flags) < 0)
 			goto nla_put_failure;
 
 		list_for_each_entry_safe(sibling, next_sibling,
 					 &rt->rt6i_siblings, rt6i_siblings) {
-			if (rt6_add_nexthop(skb, sibling) < 0)
+			if (rt6_add_nexthop(skb, sibling, &rtm->rtm_flags) < 0)
 				goto nla_put_failure;
 		}
 
