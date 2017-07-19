@@ -3591,6 +3591,100 @@ static void mlxsw_sp_lag_fini(struct mlxsw_sp *mlxsw_sp)
 	kfree(mlxsw_sp->lags);
 }
 
+#define MLXSW_SP_KDVL_ACT_EXT_SIZE 1
+
+static int mlxsw_sp_act_kvdl_set_add(void *priv, u32 *p_kvdl_index,
+				     char *enc_actions, bool is_first)
+{
+	struct mlxsw_sp *mlxsw_sp = priv;
+	char pefa_pl[MLXSW_REG_PEFA_LEN];
+	u32 kvdl_index;
+	int err;
+
+	/* The first action set of a TCAM entry is stored directly in TCAM,
+	 * not KVD linear area.
+	 */
+	if (is_first)
+		return 0;
+
+	err = mlxsw_sp_kvdl_alloc(mlxsw_sp, MLXSW_SP_KDVL_ACT_EXT_SIZE,
+				  &kvdl_index);
+	if (err)
+		return err;
+	mlxsw_reg_pefa_pack(pefa_pl, kvdl_index, enc_actions);
+	err = mlxsw_reg_write(mlxsw_sp->core, MLXSW_REG(pefa), pefa_pl);
+	if (err)
+		goto err_pefa_write;
+	*p_kvdl_index = kvdl_index;
+	return 0;
+
+err_pefa_write:
+	mlxsw_sp_kvdl_free(mlxsw_sp, kvdl_index);
+	return err;
+}
+
+static void mlxsw_sp_act_kvdl_set_del(void *priv, u32 kvdl_index,
+				      bool is_first)
+{
+	struct mlxsw_sp *mlxsw_sp = priv;
+
+	if (is_first)
+		return;
+	mlxsw_sp_kvdl_free(mlxsw_sp, kvdl_index);
+}
+
+static int mlxsw_sp_act_kvdl_fwd_entry_add(void *priv, u32 *p_kvdl_index,
+					   u8 local_port)
+{
+	struct mlxsw_sp *mlxsw_sp = priv;
+	char ppbs_pl[MLXSW_REG_PPBS_LEN];
+	u32 kvdl_index;
+	int err;
+
+	err = mlxsw_sp_kvdl_alloc(mlxsw_sp, 1, &kvdl_index);
+	if (err)
+		return err;
+	mlxsw_reg_ppbs_pack(ppbs_pl, kvdl_index, local_port);
+	err = mlxsw_reg_write(mlxsw_sp->core, MLXSW_REG(ppbs), ppbs_pl);
+	if (err)
+		goto err_ppbs_write;
+	*p_kvdl_index = kvdl_index;
+	return 0;
+
+err_ppbs_write:
+	mlxsw_sp_kvdl_free(mlxsw_sp, kvdl_index);
+	return err;
+}
+
+static void mlxsw_sp_act_kvdl_fwd_entry_del(void *priv, u32 kvdl_index)
+{
+	struct mlxsw_sp *mlxsw_sp = priv;
+
+	mlxsw_sp_kvdl_free(mlxsw_sp, kvdl_index);
+}
+
+static const struct mlxsw_afa_ops mlxsw_sp_act_afa_ops = {
+	.kvdl_set_add		= mlxsw_sp_act_kvdl_set_add,
+	.kvdl_set_del		= mlxsw_sp_act_kvdl_set_del,
+	.kvdl_fwd_entry_add	= mlxsw_sp_act_kvdl_fwd_entry_add,
+	.kvdl_fwd_entry_del	= mlxsw_sp_act_kvdl_fwd_entry_del,
+};
+
+static int mlxsw_sp_afa_init(struct mlxsw_sp *mlxsw_sp)
+{
+	mlxsw_sp->afa = mlxsw_afa_create(MLXSW_CORE_RES_GET(mlxsw_sp->core,
+							    ACL_ACTIONS_PER_SET),
+					 &mlxsw_sp_act_afa_ops, mlxsw_sp);
+	if (IS_ERR(mlxsw_sp->afa))
+		return PTR_ERR(mlxsw_sp->afa);
+	return 0;
+}
+
+static void mlxsw_sp_afa_fini(struct mlxsw_sp *mlxsw_sp)
+{
+	mlxsw_afa_destroy(acl->afa);
+}
+
 static int mlxsw_sp_basic_trap_groups_set(struct mlxsw_core *mlxsw_core)
 {
 	char htgt_pl[MLXSW_REG_HTGT_LEN];
@@ -3665,6 +3759,12 @@ static int mlxsw_sp_init(struct mlxsw_core *mlxsw_core,
 		goto err_span_init;
 	}
 
+	err = mlxsw_sp_afa_init(mlxsw_sp);
+	if (err) {
+		dev_err(mlxsw_sp->bus_info->dev, "Failed to init flexible actions\n");
+		goto err_afa_init;
+	}
+
 	err = mlxsw_sp_acl_init(mlxsw_sp);
 	if (err) {
 		dev_err(mlxsw_sp->bus_info->dev, "Failed to initialize ACL\n");
@@ -3698,6 +3798,8 @@ err_dpipe_init:
 err_counter_pool_init:
 	mlxsw_sp_acl_fini(mlxsw_sp);
 err_acl_init:
+	mlxsw_sp_afa_fini(mlxsw_sp);
+err_afa_init:
 	mlxsw_sp_span_fini(mlxsw_sp);
 err_span_init:
 	mlxsw_sp_router_fini(mlxsw_sp);
@@ -3722,6 +3824,7 @@ static void mlxsw_sp_fini(struct mlxsw_core *mlxsw_core)
 	mlxsw_sp_dpipe_fini(mlxsw_sp);
 	mlxsw_sp_counter_pool_fini(mlxsw_sp);
 	mlxsw_sp_acl_fini(mlxsw_sp);
+	mlxsw_sp_afa_fini(mlxsw_sp);
 	mlxsw_sp_span_fini(mlxsw_sp);
 	mlxsw_sp_router_fini(mlxsw_sp);
 	mlxsw_sp_switchdev_fini(mlxsw_sp);
