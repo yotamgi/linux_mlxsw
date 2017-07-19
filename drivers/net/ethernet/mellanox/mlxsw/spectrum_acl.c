@@ -52,7 +52,6 @@
 struct mlxsw_sp_acl {
 	struct mlxsw_sp *mlxsw_sp;
 	struct mlxsw_afk *afk;
-	struct mlxsw_afa *afa;
 	struct mlxsw_sp_fid *dummy_fid;
 	const struct mlxsw_sp_acl_ops *ops;
 	struct rhashtable ruleset_ht;
@@ -333,7 +332,7 @@ mlxsw_sp_acl_rulei_create(struct mlxsw_sp_acl *acl)
 	rulei = kzalloc(sizeof(*rulei), GFP_KERNEL);
 	if (!rulei)
 		return NULL;
-	rulei->act_block = mlxsw_afa_block_create(acl->afa);
+	rulei->act_block = mlxsw_afa_block_create(acl->mlxsw_sp->afa);
 	if (IS_ERR(rulei->act_block)) {
 		err = PTR_ERR(rulei->act_block);
 		goto err_afa_block_create;
@@ -753,11 +752,11 @@ int mlxsw_sp_acl_init(struct mlxsw_sp *mlxsw_sp)
 		goto err_afk_create;
 	}
 
-	acl->afa = mlxsw_afa_create(MLXSW_CORE_RES_GET(mlxsw_sp->core,
-						       ACL_ACTIONS_PER_SET),
-				    &mlxsw_sp_act_afa_ops, mlxsw_sp);
-	if (IS_ERR(acl->afa)) {
-		err = PTR_ERR(acl->afa);
+	mlxsw_sp->afa = mlxsw_afa_create(MLXSW_CORE_RES_GET(mlxsw_sp->core,
+							    ACL_ACTIONS_PER_SET),
+					 &mlxsw_sp_act_afa_ops, mlxsw_sp);
+	if (IS_ERR(mlxsw_sp->afa)) {
+		err = PTR_ERR(mlxsw_sp->afa);
 		goto err_afa_create;
 	}
 
@@ -792,7 +791,7 @@ err_acl_ops_init:
 err_fid_get:
 	rhashtable_destroy(&acl->ruleset_ht);
 err_rhashtable_init:
-	mlxsw_afa_destroy(acl->afa);
+	mlxsw_afa_destroy(mlxsw_sp->afa);
 err_afa_create:
 	mlxsw_afk_destroy(acl->afk);
 err_afk_create:
@@ -810,7 +809,7 @@ void mlxsw_sp_acl_fini(struct mlxsw_sp *mlxsw_sp)
 	WARN_ON(!list_empty(&acl->rules));
 	mlxsw_sp_fid_put(acl->dummy_fid);
 	rhashtable_destroy(&acl->ruleset_ht);
-	mlxsw_afa_destroy(acl->afa);
+	mlxsw_afa_destroy(mlxsw_sp->afa);
 	mlxsw_afk_destroy(acl->afk);
 	kfree(acl);
 }
