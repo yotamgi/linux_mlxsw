@@ -495,11 +495,6 @@ static inline bool tc_can_offload(const struct net_device *dev,
 	return true;
 }
 
-static inline bool tc_skip_hw(u32 flags)
-{
-	return (flags & TCA_CLS_FLAGS_SKIP_HW) ? true : false;
-}
-
 static inline bool tc_should_offload(const struct net_device *dev,
 				     const struct tcf_proto *tp, u32 flags)
 {
