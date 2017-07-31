@@ -266,6 +266,7 @@ struct tcf_chain {
 
 struct tcf_block {
 	struct list_head chain_list;
+	struct net *net;
 	struct Qdisc *q;
 };
 
