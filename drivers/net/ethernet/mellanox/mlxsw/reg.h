@@ -4218,6 +4218,57 @@ static inline void mlxsw_reg_ritr_pack(char *payload, bool enable,
 	mlxsw_reg_ritr_if_mac_memcpy_to(payload, mac);
 }
 
+/* RTAR - Router TCAM Allocation Register
+ * --------------------------------------
+ * This register is used for allocation of regions in the LPM TCAM table.
+ */
+#define MLXSW_REG_RTAR_ID 0x8004
+#define MLXSW_REG_RTAR_LEN 0x20
+
+MLXSW_REG_DEFINE(rtar, MLXSW_REG_RTAR_ID, MLXSW_REG_RTAR_LEN);
+
+enum mlxsw_reg_rtar_op {
+	MLXSW_REG_RTAR_OP_ALLOCATE,
+	MLXSW_REG_RTAR_OP_RESIZE,
+	MLXSW_REG_RTAR_OP_DEALLOCATE,
+};
+
+/* reg_rtar_op
+ * Access: WO
+ */
+MLXSW_ITEM32(reg, rtar, op, 0x00, 28, 4);
+
+enum mlxsw_reg_rtar_key_type {
+	MLXSW_REG_RTAR_KEY_TYPE_IPV4_MULTICAST = 1,
+	MLXSW_REG_RTAR_KEY_TYPE_IPV6_MULTICAST = 3
+};
+
+/* reg_rtar_key_type
+ * TCAM key type for the region.
+ * Access: WO
+ */
+MLXSW_ITEM32(reg, rtar, key_type, 0x00, 0, 8);
+
+/* reg_rtar_region_size
+ * TCAM region size. When allocating/resizing this is the requested
+ * size, the response is the actual size.
+ * Note: Actual size may be larger than requested.
+ * Reserved for op = Deallocate
+ * Access: WO
+ */
+MLXSW_ITEM32(reg, rtar, region_size, 0x04, 0, 16);
+
+static inline void mlxsw_reg_rtar_pack(char *payload,
+				       enum mlxsw_sp_reg_rtar_op op,
+				       enum mlxsw_sp_reg_rtar_key_type key_type,
+				       u16 region_size)
+{
+	MLXSW_REG_ZERO(rtar, payload);
+	mlxsw_reg_rtar_op_set(payload, op);
+	mlxsw_reg_rtar_op_key_type_set(payload, key_type);
+	mlxsw_reg_rtar_op_region_size_set(payload, region_size);
+}
+
 /* RATR - Router Adjacency Table Register
  * --------------------------------------
  * The RATR register is used to configure the Router Adjacency (next-hop)
@@ -5280,6 +5331,177 @@ static inline void mlxsw_reg_rauhtd_ent_ipv6_unpack(char *payload,
 {
 	*p_rif = mlxsw_reg_rauhtd_ipv6_ent_rif_get(payload, rec_index);
 	mlxsw_reg_rauhtd_ipv6_ent_dip_memcpy_from(payload, rec_index, p_dip);
+}
+
+/* RIGR-V2 - Router Interface Group Register Version 2
+ * ---------------------------------------------------
+ * The RIGR_V2 register is used to add, remove and query egress interface list
+ * of a multicast forwarding entry.
+ */
+#define MLXSW_REG_RIGR2_ID 0x8023
+#define MLXSW_REG_RIGR2_LEN 0xB0
+
+#define MLXSW_REG_RIGR2_MAX_ERIFS 9
+
+MLXSW_REG_DEFINE(rigr2, MLXSW_REG_RIGR2_ID, MLXSW_REG_RIGR2_LEN);
+
+/* reg_rigr2_rigr_index
+ * KVD Linear index
+ * Access: Index
+ */
+MLXSW_ITEM32(reg, rigr2, rigr_index, 0x04, 0, 24);
+
+/* reg_rigr2_vnext
+ * Next RIGR Index is valid
+ * Access: RW
+ */
+MLXSW_ITEM32(reg, rigr2, vnext, 0x08, 31, 1);
+
+/* reg_rigr2_next_rigr_index
+ * Next RIGR Index. The index is to the KVD linear.
+ * Reserved when vnxet = ‘0’.
+ * Access: RW
+ */
+MLXSW_ITEM32(reg, rigr2, next_rigr_index, 0x08, 0, 24);
+
+/* reg_rigr2_vrmid
+ * RMID Index is valid
+ * Access: RW
+ */
+MLXSW_ITEM32(reg, rigr2, vrmid, 0x20, 31, 1);
+
+/* reg_rigr2_rmid_index
+ * RMID Index
+ * Range 0 .. max_mid - 1
+ * Reserved when vrmid = ‘0’
+ * The index is to the Port Group Table (PGT)
+ * Access: RW
+ */
+MLXSW_ITEM32(reg, rigr2, rmid_index, 0x20, 0, 16);
+
+/* reg_rigr2_erif_entry_v
+ * Egress Router Interface is valid
+ * Note that low-entries must be set if high-entries are set. For
+ * example: if erif_entry[2].v is set then erif_entry[1].v and
+ * erif_entry[0].v must be set.
+ * Index can be from 0 to cap_mc_erif_list_entries-1
+ * Access: RW
+ */
+MLXSW_ITEM32_INDEXED(reg, rigr2, erif_entry_v, 0x30, 31, 1, 4, 0, false);
+
+/* reg_rigr2_erif_entry_erif
+ * Egress Router Interface
+ * Valid range is from 0 to cap_max_router_interfaces - 1
+ * Index can be from 0 to MLXSW_REG_RIGR2_MAX_ERIFS - 1
+ * Access: RW
+ */
+MLXSW_ITEM32_INDEXED(reg, rigr2, erif_entry_erif, 0x30, 0, 16, 4, 0, false);
+
+/* RMFT-V2 - Router Multicast Forwarding Table Version 2 Register
+ * --------------------------------------------------------------
+ * The RMFT_V2 register is used to configure and query the multicast table.
+ */
+#define MLXSW_REG_RMFT2_ID 0x8027
+#define MLXSW_REG_RMFT2_LEN 0x174
+
+MLXSW_REG_DEFINE(rmft2, MLXSW_REG_RMFT2_ID, MLXSW_REG_RMFT2_LEN);
+
+/* reg_rmft2_v
+ * Valid
+ * Access: RW
+ */
+MLXSW_ITEM32(reg, rmft2, v, 0x00, 31, 1);
+
+/* reg_rmft2_offset
+ * Offset within the multicast forwarding table to write to.
+ * Access: Index
+ */
+MLXSW_ITEM32(reg, rmft2, offset, 0x00, 0, 16);
+
+/* reg_rmft2_virtual_router
+ * Virtual Router ID. Range from 0..cap_max_virtual_routers-1
+ * Access: RW
+ */
+MLXSW_ITEM32(reg, rmft2, virtual_router, 0x04, 0, 16);
+
+enum mlxsw_reg_rmft2_irif_mask {
+	MLXSW_REG_RMFT2_IRIF_MASK_IGNORE,
+	MLXSW_REG_RMFT2_IRIF_MASK_COMPARE
+};
+
+/* reg_rmft2_irif_mask
+ * Ingress RIF mask. Values are:
+ * 0: ignore the irif
+ * 1: compare the irif
+ * Access: RW
+ */
+MLXSW_ITEM32(reg, rmft2, irif_mask, 0x08, 24, 1);
+
+/* reg_rmft2_irif
+ * Ingress RIF index.
+ * Access: RW
+ */
+MLXSW_ITEM32(reg, rmft2, irif, 0x08, 0, 16);
+
+/* reg_rmft2_dip
+ * Destination IP address
+ * Access: RW
+ */
+MLXSW_ITEM32(reg, rmft2, dip, 0x10, 0, 32);
+
+/* reg_rmft2_dip_mask
+ * A bit that is set directs the TCAM to compare the corresponding bit in key. A
+ * bit that is clear directs the TCAM to ignore the corresponding bit in key.
+ * Access: RW
+ */
+MLXSW_ITEM32(reg, rmft2, dip_mask, 0x20, 0, 32);
+
+/* reg_rmft2_sip
+ * Source IP address
+ * Access: RW
+ */
+MLXSW_ITEM32(reg, rmft2, sip, 0x30, 0, 32);
+
+/* reg_rmft2_sip_mask
+ * A bit that is set directs the TCAM to compare the corresponding bit in key. A
+ * bit that is clear directs the TCAM to ignore the corresponding bit in key.
+ * Access: RW
+ */
+MLXSW_ITEM32(reg, rmft2, sip_mask, 0x40, 0, 32);
+
+/* reg_rmft2_flexible_action_set
+ * ACL action set. The only supported action types in this field and in any
+ * action-set pointed from here are as follows:
+ * 00h: ACTION_NULL
+ * 01h: ACTION_MAC_TTL, only TTL configuration is supported.
+ * 03h: ACTION_TRAP
+ * 06h: ACTION_QOS
+ * 08h: ACTION_POLICING_MONITORING
+ * 10h: ACTION_ROUTER_MC
+ * Access: RW
+ */
+MLXSW_ITEM_BUF(reg, rmft2, flexible_action_set, 0x80,
+	       MLXSW_REG_FLEX_ACTION_SET_LEN);
+
+static inline void
+mlxsw_reg_rmft2_pack(char *payload, bool v, u16 offset, u16 virtual_router,
+		     enum mlxsw_reg_rmft2_irif_mask irif_mask, u16 irif,
+		     u32 dip, u32 dip_mask, u32 sip, u32 sip_mask,
+		     const char *flexible_action_set)
+{
+	MLXSW_REG_ZERO(rmft2, payload);
+	mlxsw_reg_rmft2_v_set(payload, v);
+	mlxsw_reg_rmft2_offset_set(payload, offset);
+	mlxsw_reg_rmft2_virtual_router_set(payload, virtual_router);
+	mlxsw_reg_rmft2_irif_mask_set(payload, irif_mask);
+	mlxsw_reg_rmft2_irif_set(payload, irif);
+	mlxsw_reg_rmft2_dip_set(payload, dip);
+	mlxsw_reg_rmft2_dip_mask_set(payload, dip_mask);
+	mlxsw_reg_rmft2_sip_set(payload, sip);
+	mlxsw_reg_rmft2_sip_mask_set(payload, sip_mask);
+	if (flexible_action_set)
+		mlxsw_reg_rmft2_flexible_action_set_memcpy_to(payload,
+							      flexible_action_set);
 }
 
 /* MFCR - Management Fan Control Register
@@ -6551,6 +6773,7 @@ static const struct mlxsw_reg_info *mlxsw_reg_infos[] = {
 	MLXSW_REG(hpkt),
 	MLXSW_REG(rgcr),
 	MLXSW_REG(ritr),
+	MLXSW_REG(rtar),
 	MLXSW_REG(ratr),
 	MLXSW_REG(ricnt),
 	MLXSW_REG(ralta),
@@ -6560,6 +6783,8 @@ static const struct mlxsw_reg_info *mlxsw_reg_infos[] = {
 	MLXSW_REG(rauht),
 	MLXSW_REG(raleu),
 	MLXSW_REG(rauhtd),
+	MLXSW_REG(rigr2),
+	MLXSW_REG(rmft2),
 	MLXSW_REG(mfcr),
 	MLXSW_REG(mfsc),
 	MLXSW_REG(mfsm),
