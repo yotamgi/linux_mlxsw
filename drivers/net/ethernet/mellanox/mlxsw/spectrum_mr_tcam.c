@@ -85,6 +85,7 @@ static struct mlxsw_sp_mr_tcam_erif_list *mlxsw_sp_mr_erif_list_create(void)
 		return NULL;
 
 	INIT_LIST_HEAD(&erif_list->rigr2_entries);
+	printk(KERN_INFO "%s:%d: Creating new erif_list %p\n", __func__, __LINE__, erif_list);
 	return erif_list;
 }
 
@@ -123,6 +124,7 @@ mlxsw_sp_mr_rigr2_entry_create(struct mlxsw_sp *mlxsw_sp,
 		return ERR_PTR(err);
 	}
 
+	printk(KERN_INFO "%s:%d: Creating new rigr2 %p\n", __func__, __LINE__, rigr2_entry);
 	list_add_tail(&rigr2_entry->list, &erif_list->rigr2_entries);
 	return rigr2_entry;
 }
@@ -131,6 +133,7 @@ static void
 mlxsw_sp_mr_rigr2_entry_destroy(struct mlxsw_sp *mlxsw_sp,
 				struct mlxsw_sp_mr_rigr2_entry *rigr2_entry)
 {
+	printk(KERN_INFO "%s:%d: Destroy rigr2 entry %p\n", __func__, __LINE__, rigr2_entry);
 	list_del(&rigr2_entry->list);
 	mlxsw_sp_kvdl_free(mlxsw_sp, rigr2_entry->kvdl_index);
 	kfree(rigr2_entry);
@@ -147,6 +150,8 @@ mlxsw_sp_mr_erif_list_add(struct mlxsw_sp *mlxsw_sp,
 	 * new one.
 	 */
 	if (list_empty(&erif_list->rigr2_entries)) {
+		printk(KERN_INFO "%s:%d Creating first rigr2 \n", __func__,
+		       __LINE__);
 		last_entry = mlxsw_sp_mr_rigr2_entry_create(mlxsw_sp,
 							    erif_list);
 		if (IS_ERR(last_entry))
@@ -165,6 +170,7 @@ mlxsw_sp_mr_erif_list_add(struct mlxsw_sp *mlxsw_sp,
 	}
 
 	/* Add the eRIF to the last entry's last index */
+	printk(KERN_INFO "%s:%d Adding port to erif_list %p\n", __func__, __LINE__, erif_list);
 	last_entry->erif_indices[last_entry->num_erifs++] = erif_index;
 	return 0;
 }
@@ -174,6 +180,8 @@ mlxsw_sp_mr_erif_list_destroy(struct mlxsw_sp *mlxsw_sp,
 			      struct mlxsw_sp_mr_tcam_erif_list *erif_list)
 {
 	struct mlxsw_sp_mr_rigr2_entry *rigr2_entry, *tmp;
+
+	printk(KERN_INFO "%s:%d Destroy erif_list %p\n", __func__, __LINE__, erif_list);
 
 	list_for_each_entry_safe(rigr2_entry, tmp, &erif_list->rigr2_entries,
 				 list)
@@ -198,6 +206,8 @@ mlxsw_sp_mr_erif_list_commit(struct mlxsw_sp *mlxsw_sp,
 	list_for_each_entry(rigr2_entry, &erif_list->rigr2_entries, list) {
 		if (rigr2_entry->synced)
 			continue;
+
+		printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 
 		if (!first) {
 			int next = rigr2_entry->kvdl_index;
@@ -226,6 +236,9 @@ mlxsw_sp_mr_erif_list_commit(struct mlxsw_sp *mlxsw_sp,
 		first = false;
 		set = true;
 	}
+
+	print_hex_dump(KERN_INFO, "rigr2 ", DUMP_PREFIX_OFFSET, 32, 4,
+		       rigr2_pl, MLXSW_REG_RIGR2_LEN, true);
 
 	if (set)
 		return mlxsw_reg_write(mlxsw_sp->core,  MLXSW_REG(rigr2), rigr2_pl);
@@ -256,16 +269,21 @@ mlxsw_sp_mr_tcam_afa_block_create(struct mlxsw_sp *mlxsw_sp,
 	u32 kvdl_index;
 	int err;
 
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	afa_block = mlxsw_afa_block_create(mlxsw_sp->afa);
 	if (IS_ERR(afa_block))
 		return afa_block;
 
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	err = mlxsw_afa_block_append_counter(afa_block, counter_index);
-	if (err)
+	if (err) {
+		printk(KERN_INFO "%s:%d err append counter\n", __func__, __LINE__);
 		goto err;
+	}
 
 	switch (route_action) {
 	case MLXSW_SP_MR_ROUTE_ACTION_TRAP:
+		printk(KERN_INFO "%s:%d appending trap\n", __func__, __LINE__);
 		err = mlxsw_afa_block_append_trap(afa_block,
 						  MLXSW_TRAP_ID_ACL1);
 		if (err)
@@ -280,6 +298,8 @@ mlxsw_sp_mr_tcam_afa_block_create(struct mlxsw_sp *mlxsw_sp,
 			goto err;
 
 		kvdl_index = mlxsw_sp_mr_erif_list_kvdl_index(erif_list);
+		printk(KERN_INFO "%s:%d appending mcrouter to index %d\n",
+		       __func__, __LINE__, kvdl_index);
 		err = mlxsw_afa_block_append_mcrouter(afa_block, irif_index,
 						      min_mtu, false,
 						      kvdl_index);
@@ -296,6 +316,7 @@ mlxsw_sp_mr_tcam_afa_block_create(struct mlxsw_sp *mlxsw_sp,
 		goto err;
 	return afa_block;
 err:
+	printk(KERN_INFO "%s:%d err!\n", __func__, __LINE__);
 	mlxsw_afa_block_destroy(afa_block);
 	return ERR_PTR(err);
 }
@@ -313,6 +334,9 @@ static int mlxsw_sp_mr_tcam_route_write(struct mlxsw_sp *mlxsw_sp,
 {
 	char rmft2_pl[MLXSW_REG_RMFT2_LEN];
 
+	printk(KERN_INFO "%s:%d Adding TCAM route offset=%d %8x %8x\n", __func__, __LINE__,
+	       (int)parman_item->index, *(u32 *)key->source, *(u32 *)key->group);
+
 	switch (key->proto) {
 	case MLXSW_SP_L3_PROTO_IPV4:
 		mlxsw_reg_rmft2_ipv4_pack(rmft2_pl, true, parman_item->index,
@@ -328,6 +352,9 @@ static int mlxsw_sp_mr_tcam_route_write(struct mlxsw_sp *mlxsw_sp,
 	default:
 		WARN_ON_ONCE(1);
 	}
+
+	print_hex_dump(KERN_INFO, "rmft2 ", DUMP_PREFIX_OFFSET, 32, 4,
+		       rmft2_pl, MLXSW_REG_RMFT2_LEN, true);
 
 	return mlxsw_reg_write(mlxsw_sp->core, MLXSW_REG(rmft2), rmft2_pl);
 }
@@ -410,6 +437,7 @@ mlxsw_sp_mr_tcam_route_create(struct mlxsw_sp *mlxsw_sp, void *priv,
 	struct mlxsw_sp_mr_tcam *mr_tcam = priv;
 	int err;
 
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	route->key = route_params->key;
 	route->irif_index = route_params->value.irif_index;
 	route->min_mtu = route_params->value.min_mtu;
@@ -425,11 +453,13 @@ mlxsw_sp_mr_tcam_route_create(struct mlxsw_sp *mlxsw_sp, void *priv,
 		goto err_erif_populate;
 
 	/* Create the flow counter */
+	printk(KERN_INFO "%s:%d alloc counter\n", __func__, __LINE__);
 	err = mlxsw_sp_flow_counter_alloc(mlxsw_sp, &route->counter_index);
 	if (err)
 		goto err_flow_counter_alloc;
 
 	/* Create the flexible action block */
+	printk(KERN_INFO "%s:%d creating block\n", __func__, __LINE__);
 	route->afa_block = mlxsw_sp_mr_tcam_afa_block_create(mlxsw_sp,
 							     route->action,
 							     route->irif_index,
@@ -448,6 +478,7 @@ mlxsw_sp_mr_tcam_route_create(struct mlxsw_sp *mlxsw_sp, void *priv,
 		goto err_parman_item_add;
 
 	/* Write the route to the TCAM */
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	err = mlxsw_sp_mr_tcam_route_write(mlxsw_sp, &route->parman_item,
 					   &route->key, route->afa_block);
 	if (err)
@@ -472,11 +503,16 @@ static void mlxsw_sp_mr_tcam_route_destroy(struct mlxsw_sp *mlxsw_sp,
 	struct mlxsw_sp_mr_tcam_route *route = route_priv;
 	struct mlxsw_sp_mr_tcam *mr_tcam = priv;
 
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	mlxsw_sp_mr_tcam_route_remove(mlxsw_sp, route->key.vrid,
 				      &route->parman_item);
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	mlxsw_sp_mr_tcam_route_parman_item_remove(mr_tcam, route);
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	mlxsw_sp_mr_tcam_afa_block_destroy(route->afa_block);
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	mlxsw_sp_flow_counter_free(mlxsw_sp, route->counter_index);
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	mlxsw_sp_mr_erif_list_destroy(mlxsw_sp, route->erif_list);
 }
 
@@ -597,6 +633,7 @@ static int mlxsw_sp_mr_tcam_route_erif_del(struct mlxsw_sp *mlxsw_sp,
 	int i;
 
 	/* Create a copy of the original erif_list without the deleted entry */
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	erif_list = mlxsw_sp_mr_erif_list_create();
 	if (!erif_list)
 		return -ENOMEM;
@@ -615,6 +652,7 @@ static int mlxsw_sp_mr_tcam_route_erif_del(struct mlxsw_sp *mlxsw_sp,
 	}
 
 	/* Create the flexible action block pointing to the new erif_list */
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	afa_block = mlxsw_sp_mr_tcam_afa_block_create(mlxsw_sp, route->action,
 						      route->irif_index,
 						      route->counter_index,
@@ -626,11 +664,13 @@ static int mlxsw_sp_mr_tcam_route_erif_del(struct mlxsw_sp *mlxsw_sp,
 	}
 
 	/* Update the TCAM route entry */
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	err = mlxsw_sp_mr_tcam_route_write(mlxsw_sp, &route->parman_item,
 					   &route->key, afa_block);
 	if (err)
 		goto err_route_write;
 
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	mlxsw_sp_mr_tcam_afa_block_destroy(route->afa_block);
 	mlxsw_sp_mr_erif_list_destroy(mlxsw_sp, route->erif_list);
 	route->afa_block = afa_block;
@@ -731,6 +771,7 @@ static int mlxsw_sp_mr_tcam_region_parman_resize(void *priv,
 	char rtar_pl[MLXSW_REG_RTAR_LEN];
 	u64 max_tcam_rules;
 
+	printk(KERN_INFO "%s:%d: resize\n", __func__, __LINE__);
 	max_tcam_rules = MLXSW_CORE_RES_GET(mlxsw_sp->core, ACL_MAX_TCAM_RULES);
 	if (new_count > max_tcam_rules)
 		return -EINVAL;
@@ -748,6 +789,7 @@ static void mlxsw_sp_mr_tcam_region_parman_move(void *priv,
 	struct mlxsw_sp *mlxsw_sp = mr_tcam_region->mlxsw_sp;
 	char rrcr_pl[MLXSW_REG_RRCR_LEN];
 
+	printk(KERN_INFO "%s:%d: Moving %d routes from %d to %d\n", __func__, __LINE__, (int)count, (int)from_index, (int)to_index);
 	mlxsw_reg_rrcr_pack(rrcr_pl, MLXSW_REG_RRCR_OP_MOVE,
 			    from_index, count,
 			    mr_tcam_region->rtar_key_type, to_index);

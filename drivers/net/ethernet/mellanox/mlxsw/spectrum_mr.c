@@ -261,6 +261,7 @@ mlxsw_sp_mr_route_value_create(struct mlxsw_sp_mr_table *mr_table,
 	int i = 0;
 
 	erif_num = 0;
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	list_for_each_entry(rve, &mr_route->evif_list, route_node)
 		if (mlxsw_sp_mr_vif_valid(rve->mr_vif))
 			erif_num++;
@@ -270,19 +271,28 @@ mlxsw_sp_mr_route_value_create(struct mlxsw_sp_mr_table *mr_table,
 	if (!erif_indices)
 		return -ENOMEM;
 
+	printk(KERN_INFO "%s:%d erif_num=%d\n", __func__, __LINE__, erif_num);
 	list_for_each_entry(rve, &mr_route->evif_list, route_node) {
+		printk(KERN_INFO "%s:%d valid? %d\n", __func__, __LINE__,
+		       (int)rve->mr_vif->vif_flags);
+
 		if (mlxsw_sp_mr_vif_valid(rve->mr_vif)) {
 			u16 rifi = mlxsw_sp_rif_index(rve->mr_vif->rif);
 
+			printk(KERN_INFO "%s:%d valid rif\n", __func__, __LINE__);
 			erif_indices[i++] = rifi;
 		}
 	}
 
-	if (mlxsw_sp_mr_vif_valid(mr_route->ivif.mr_vif))
+	if (mlxsw_sp_mr_vif_valid(mr_route->ivif.mr_vif)) {
+		printk(KERN_INFO "%s:%d ivif found to be valid\n", __func__, __LINE__);
 		ivif_index = mlxsw_sp_rif_index(mr_route->ivif.mr_vif->rif);
-	else
+	} else {
+		printk(KERN_INFO "%s:%d ivif found to not be valid\n", __func__, __LINE__);
 		ivif_index = 0;
+	}
 
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	route_value->irif_index = ivif_index;
 	route_value->erif_indices = erif_indices;
 	route_value->min_mtu = mr_route->min_mtu;
@@ -313,6 +323,7 @@ static int mlxsw_sp_mr_route_write(struct mlxsw_sp_mr_table *mr_table,
 	if (!replace) {
 		struct mlxsw_sp_mr_route_params route_params;
 
+		printk(KERN_INFO "%s:%d new route\n", __func__, __LINE__);
 		mr_route->route_priv = kzalloc(mr->mr_ops->route_priv_size,
 					       GFP_KERNEL);
 		if (!mr_route->route_priv) {
@@ -331,6 +342,7 @@ static int mlxsw_sp_mr_route_write(struct mlxsw_sp_mr_table *mr_table,
 	} else {
 		err = mr->mr_ops->route_update(mlxsw_sp, mr_route->route_priv,
 					       &route_value);
+		printk(KERN_INFO "%s:%d update route\n", __func__, __LINE__);
 	}
 out:
 	mlxsw_sp_mr_route_value_destroy(&route_value);
@@ -343,6 +355,7 @@ static void mlxsw_sp_mr_route_erase(struct mlxsw_sp_mr_table *mr_table,
 	struct mlxsw_sp *mlxsw_sp = mr_table->mlxsw_sp;
 	struct mlxsw_sp_mr *mr = mlxsw_sp->mr;
 
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	mr->mr_ops->route_destroy(mlxsw_sp, mr->priv, mr_route->route_priv);
 	kfree(mr_route->route_priv);
 }
@@ -362,6 +375,7 @@ mlxsw_sp_mr_route4_create(struct mlxsw_sp_mr_table *mr_table,
 		return ERR_PTR(-EINVAL);
 
 	/* Allocate and init a new route and fill it with parameters */
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	mr_route = kzalloc(sizeof(*mr_table), GFP_KERNEL);
 	if (!mr_route)
 		return ERR_PTR(-ENOMEM);
@@ -369,12 +383,15 @@ mlxsw_sp_mr_route4_create(struct mlxsw_sp_mr_table *mr_table,
 	mlxsw_sp_mr_route4_key(mr_table, &mr_route->key, mfc);
 
 	/* Find min_mtu and link iVIF and eVIFs */
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	mr_route->min_mtu = ETH_MAX_MTU;
 	ipmr_cache_hold(mfc);
 	mr_route->mfc4 = mfc;
 	mr_route->mr_table = mr_table;
 	for (i = 0; i < MAXVIFS; i++) {
 		if (mfc->mfc_un.res.ttls[i] != MLXSW_SP_MR_MAX_TTL) {
+			printk(KERN_INFO "%s:%d vif=%d ttl=%d\n", __func__, __LINE__, i,
+				mfc->mfc_un.res.ttls[i]);
 			err = mlxsw_sp_mr_route_evif_link(mr_route,
 							  &mr_table->vifs[i]);
 			if (err)
@@ -384,11 +401,13 @@ mlxsw_sp_mr_route4_create(struct mlxsw_sp_mr_table *mr_table,
 				mr_route->min_mtu = mr_table->vifs[i].dev->mtu;
 		}
 	}
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	mlxsw_sp_mr_route_ivif_link(mr_route, &mr_table->vifs[mfc->mfc_parent]);
 	if (err)
 		goto err_route_ivif_link;
 
 	mr_route->route_action = mlxsw_sp_mr_route_action(mr_route);
+	printk(KERN_INFO "%s:%d succ\n", __func__, __LINE__);
 	return mr_route;
 
 err_route_ivif_link:
@@ -463,6 +482,7 @@ int mlxsw_sp_mr_route4_add(struct mlxsw_sp_mr_table *mr_table,
 	}
 
 	/* Create a new route */
+	printk(KERN_INFO "%s:%d create\n", __func__, __LINE__);
 	mr_route = mlxsw_sp_mr_route4_create(mr_table, mfc);
 	if (IS_ERR(mr_route))
 		return PTR_ERR(mr_route);
@@ -474,6 +494,7 @@ int mlxsw_sp_mr_route4_add(struct mlxsw_sp_mr_table *mr_table,
 	if (replace) {
 		/* On replace case, make the route point to the new route_priv.
 		 */
+		printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 		if (WARN_ON(!mr_orig_route)) {
 			err = -ENOENT;
 			goto err_no_orig_route;
@@ -498,6 +519,7 @@ int mlxsw_sp_mr_route4_add(struct mlxsw_sp_mr_table *mr_table,
 		goto err_rhashtable_insert;
 
 	/* Write the route to the hardware */
+	printk(KERN_INFO "%s:%d before write\n", __func__, __LINE__);
 	err = mlxsw_sp_mr_route_write(mr_table, mr_route, replace);
 	if (err)
 		goto err_mr_route_write;
@@ -512,6 +534,7 @@ int mlxsw_sp_mr_route4_add(struct mlxsw_sp_mr_table *mr_table,
 	}
 
 	mlxsw_sp_mr_mfc_offload_update(mr_route);
+	printk(KERN_INFO "%s:%d finished\n", __func__, __LINE__);
 	return 0;
 
 err_mr_route_write:
@@ -529,11 +552,13 @@ static void __mlxsw_sp_mr_route_del(struct mlxsw_sp_mr_table *mr_table,
 				    struct mlxsw_sp_mr_route *mr_route)
 {
 	mlxsw_sp_mr_mfc_offload_set(mr_route, false);
+	printk(KERN_INFO "%s:%d before erase\n", __func__, __LINE__);
 	mlxsw_sp_mr_route_erase(mr_table, mr_route);
 	rhashtable_remove_fast(&mr_table->route_ht, &mr_route->ht_node,
 			       mlxsw_sp_mr_route_ht_params);
 	list_del(&mr_route->node);
 	mlxsw_sp_mr_route_destroy(mr_table, mr_route);
+	printk(KERN_INFO "%s:%d before destroy\n", __func__, __LINE__);
 }
 
 void mlxsw_sp_mr_route4_del(struct mlxsw_sp_mr_table *mr_table,
@@ -542,9 +567,11 @@ void mlxsw_sp_mr_route4_del(struct mlxsw_sp_mr_table *mr_table,
 	struct mlxsw_sp_mr_route *mr_route;
 	struct mlxsw_sp_mr_route_key key;
 
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	mlxsw_sp_mr_route4_key(mr_table, &key, mfc);
 	mr_route = rhashtable_lookup_fast(&mr_table->route_ht, &key,
 					  mlxsw_sp_mr_route_ht_params);
+	printk(KERN_INFO "%s:%d found route %p\n", __func__, __LINE__, mr_route);
 	if (mr_route)
 		__mlxsw_sp_mr_route_del(mr_table, mr_route);
 }
@@ -701,6 +728,8 @@ static int mlxsw_sp_mr_vif_resolve(struct mlxsw_sp_mr_table *mr_table,
 	int err;
 
 	/* Update the VIF */
+	printk(KERN_INFO "%s:%d Adding VIF %x\n", __func__, __LINE__,
+	       (int)vif_flags);
 	mr_vif->dev = dev;
 	mr_vif->rif = rif;
 	mr_vif->vif_flags = vif_flags;
@@ -768,6 +797,7 @@ void mlxsw_sp_mr_vif_del(struct mlxsw_sp_mr_table *mr_table, vifi_t vif_index)
 {
 	struct mlxsw_sp_mr_vif *mr_vif = &mr_table->vifs[vif_index];
 
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	if (WARN_ON(vif_index >= MAXVIFS))
 		return;
 	if (WARN_ON(!mr_vif->dev))
@@ -809,6 +839,7 @@ void mlxsw_sp_mr_rif_del(struct mlxsw_sp_mr_table *mr_table,
 	const struct net_device *rif_dev = mlxsw_sp_rif_dev(rif);
 	struct mlxsw_sp_mr_vif *mr_vif;
 
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	if (!rif_dev)
 		return;
 
@@ -816,6 +847,7 @@ void mlxsw_sp_mr_rif_del(struct mlxsw_sp_mr_table *mr_table,
 	if (!mr_vif)
 		return;
 	mlxsw_sp_mr_vif_unresolve(mr_table, mr_vif->dev, mr_vif);
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 }
 
 void mlxsw_sp_mr_rif_mtu_update(struct mlxsw_sp_mr_table *mr_table,
@@ -864,11 +896,13 @@ struct mlxsw_sp_mr_table *mlxsw_sp_mr_table_create(struct mlxsw_sp *mlxsw_sp,
 	int err;
 	int i;
 
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	mr_table = kzalloc(sizeof(*mr_table) + mr->mr_ops->route_priv_size,
 			   GFP_KERNEL);
 	if (!mr_table)
 		return ERR_PTR(-ENOMEM);
 
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	mr_table->vr_id = vr_id;
 	mr_table->mlxsw_sp = mlxsw_sp;
 	mr_table->dummy_rif_index = 0;
@@ -880,11 +914,13 @@ struct mlxsw_sp_mr_table *mlxsw_sp_mr_table_create(struct mlxsw_sp *mlxsw_sp,
 	if (err)
 		goto err_route_rhashtable_init;
 
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	for (i = 0; i < MAXVIFS; i++) {
 		INIT_LIST_HEAD(&mr_table->vifs[i].route_evif_list);
 		INIT_LIST_HEAD(&mr_table->vifs[i].route_ivif_list);
 	}
 
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	err = mr->mr_ops->route_create(mlxsw_sp, mr->priv,
 				       mr_table->catchall_route_priv,
 				       &catchall_route_params);
@@ -983,6 +1019,7 @@ int mlxsw_sp_mr_init(struct mlxsw_sp *mlxsw_sp,
 {
 	struct mlxsw_sp_mr *mr;
 	int err;
+	printk(KERN_INFO "%s\n", __func__);
 
 	mr = kzalloc(sizeof(*mr) + mr_ops->priv_size, GFP_KERNEL);
 	if (!mr)

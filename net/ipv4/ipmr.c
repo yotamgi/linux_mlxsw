@@ -755,6 +755,7 @@ static void ipmr_cache_free_rcu(struct rcu_head *head)
 
 void ipmr_cache_free(struct mfc_cache *c)
 {
+	printk("CACHE FREE %p\n", c);
 	call_rcu(&c->rcu, ipmr_cache_free_rcu);
 }
 EXPORT_SYMBOL(ipmr_cache_free);
@@ -1054,6 +1055,7 @@ static struct mfc_cache *ipmr_cache_alloc(void)
 		c->mfc_un.res.minvif = MAXVIFS;
 		refcount_set(&c->mfc_un.res.refcount, 1);
 	}
+	printk("CACHE ALLOC %p\n", c);
 	return c;
 }
 

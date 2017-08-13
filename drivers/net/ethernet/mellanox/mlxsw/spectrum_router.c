@@ -705,6 +705,8 @@ static struct mlxsw_sp_vr *mlxsw_sp_vr_create(struct mlxsw_sp *mlxsw_sp,
 	struct mlxsw_sp_vr *vr;
 	int err;
 
+	printk("Creating VR YOTAMG!! %d\n", tb_id);
+
 	vr = mlxsw_sp_vr_find_unused(mlxsw_sp);
 	if (!vr)
 		return ERR_PTR(-EBUSY);
@@ -4033,10 +4035,12 @@ static int mlxsw_sp_router_fibmr_add(struct mlxsw_sp *mlxsw_sp,
 	if (mlxsw_sp->router->aborted)
 		return 0;
 
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	vr = mlxsw_sp_vr_get(mlxsw_sp, men_info->tb_id);
 	if (IS_ERR(vr))
 		return PTR_ERR(vr);
 
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 	return mlxsw_sp_mr_route4_add(vr->mr_table, men_info->mfc, replace);
 }
 
@@ -4319,12 +4323,16 @@ static void mlxsw_sp_router_fibmr_event_work(struct work_struct *work)
 	bool replace;
 	int err;
 
+	printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
+
 	rtnl_lock();
 	switch (fib_work->event) {
 	case FIB_EVENT_ENTRY_REPLACE: /* fall through */
 	case FIB_EVENT_ENTRY_ADD:
+		printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 		replace = fib_work->event == FIB_EVENT_ENTRY_REPLACE;
 
+		printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 		err = mlxsw_sp_router_fibmr_add(mlxsw_sp, &fib_work->men_info,
 						replace);
 		if (err)
@@ -4332,10 +4340,12 @@ static void mlxsw_sp_router_fibmr_event_work(struct work_struct *work)
 		ipmr_cache_put(fib_work->men_info.mfc);
 		break;
 	case FIB_EVENT_ENTRY_DEL:
+		printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 		mlxsw_sp_router_fibmr_del(mlxsw_sp, &fib_work->men_info);
 		ipmr_cache_put(fib_work->men_info.mfc);
 		break;
 	case FIB_EVENT_VIF_ADD:
+		printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 		err = mlxsw_sp_router_fibmr_vif_add(mlxsw_sp,
 						    &fib_work->ven_info);
 		if (err)
@@ -4343,12 +4353,14 @@ static void mlxsw_sp_router_fibmr_event_work(struct work_struct *work)
 		dev_put(fib_work->ven_info.dev);
 		break;
 	case FIB_EVENT_VIF_DEL:
+		printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 		mlxsw_sp_router_fibmr_vif_del(mlxsw_sp,
 					      &fib_work->ven_info);
 		dev_put(fib_work->ven_info.dev);
 		break;
 	case FIB_EVENT_RULE_ADD: /* fall through */
 	case FIB_EVENT_RULE_DEL:
+		printk(KERN_INFO "%s:%d\n", __func__, __LINE__);
 		rule = fib_work->fr_info.rule;
 		if (!ipmr_rule_default(rule) && !rule->l3mdev)
 			mlxsw_sp_router_fib_abort(mlxsw_sp);
@@ -4457,6 +4469,7 @@ static int mlxsw_sp_router_fib_event(struct notifier_block *nb,
 		mlxsw_sp_router_fib6_event(fib_work, info);
 		break;
 	case RTNL_FAMILY_IPMR:
+		printk(KERN_INFO "spectrum_router: fibmr event!\n");
 		INIT_WORK(&fib_work->work, mlxsw_sp_router_fibmr_event_work);
 		mlxsw_sp_router_fibmr_event(fib_work, info);
 		break;
