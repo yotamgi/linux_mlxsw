@@ -5,6 +5,7 @@
 #include <linux/pim.h>
 #include <linux/rhashtable.h>
 #include <net/sock.h>
+#include <net/fib_rules.h>
 #include <net/fib_notifier.h>
 #include <uapi/linux/mroute.h>
 
@@ -176,6 +177,11 @@ static inline void ipmr_cache_put(struct mfc_cache *c)
 static inline void ipmr_cache_hold(struct mfc_cache *c)
 {
 	refcount_inc(&c->mfc_un.res.refcount);
+}
+
+static inline bool ipmr_rule_default(const struct fib_rule *rule)
+{
+	return fib_rule_matchall(rule) && rule->table == RT_TABLE_DEFAULT;
 }
 
 #endif
